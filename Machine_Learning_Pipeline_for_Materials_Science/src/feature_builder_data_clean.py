@@ -198,6 +198,17 @@ def build_ml_table(input_csv: str, tolerance: float = 0.1, atomic_radii: dict = 
     s2_entropy = df.get("s2_entropy_temporal", np.nan).astype(float)
     s2_entropy_avg = df.get("s2_entropy_avg_temporal", np.nan).astype(float)
     isb = df.get("isb_temporal", np.nan).astype(float)
+    # Thermodynamic descriptors (use pd.Series default to handle missing columns)
+    _nan_series = pd.Series(np.nan, index=df.index)
+    pe_atom = df.get("pe_atom_temporal", _nan_series).astype(float)
+    pe_atom_std = df.get("pe_atom_std_temporal", _nan_series).astype(float)
+    hydrostatic_pressure = df.get("hydrostatic_pressure_temporal", _nan_series).astype(float)
+    von_mises_stress = df.get("von_mises_stress_temporal", _nan_series).astype(float)
+    deviatoric_norm = df.get("deviatoric_norm_temporal", _nan_series).astype(float)
+    stress_anisotropy = df.get("stress_anisotropy_temporal", _nan_series).astype(float)
+    local_enthalpy = df.get("local_enthalpy_temporal", _nan_series).astype(float)
+    excess_energy = df.get("excess_energy_temporal", _nan_series).astype(float)
+    pe_volume_residual = df.get("pe_volume_residual", _nan_series).astype(float)
     csro_unlike = df.get("csro_unlike_temporal", np.nan).astype(float)
     csro_like = df.get("csro_like_temporal", np.nan).astype(float)
     csro_unlike_std = df.get("csro_unlike_std_temporal", np.nan).astype(float)
@@ -366,6 +377,16 @@ def build_ml_table(input_csv: str, tolerance: float = 0.1, atomic_radii: dict = 
         "mean_angle_liketype_temporal": mean_angle_liketype,
         "mean_angle_unliketype_temporal": mean_angle_unliketype,
         "mean_angle_mixedtype_temporal": mean_angle_mixedtype,
+        # Thermodynamic columns
+        "pe_atom_temporal": pe_atom,
+        "pe_atom_std_temporal": pe_atom_std,
+        "hydrostatic_pressure_temporal": hydrostatic_pressure,
+        "von_mises_stress_temporal": von_mises_stress,
+        "deviatoric_norm_temporal": deviatoric_norm,
+        "stress_anisotropy_temporal": stress_anisotropy,
+        "local_enthalpy_temporal": local_enthalpy,
+        "excess_energy_temporal": excess_energy,
+        "pe_volume_residual": pe_volume_residual,
     })
 
     # Add neighbor columns

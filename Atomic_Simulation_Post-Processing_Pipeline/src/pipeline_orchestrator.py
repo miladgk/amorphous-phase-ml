@@ -193,6 +193,8 @@ def csv_export(initial_atom_data_list, all_analysis_results, params, analysis_le
             'mean_neighbor_CN_temporal': original_temporal_data.get('mean_neighbor_CN_temporal', np.nan),
             'mean_neighbor_free_volume_temporal': original_temporal_data.get('mean_neighbor_free_volume_temporal', np.nan),
             'mean_neighbor_asphericity_temporal': original_temporal_data.get('mean_neighbor_asphericity_temporal', np.nan),
+            'local_energy_fluctuation_temporal': original_temporal_data.get('local_energy_fluctuation_temporal', np.nan),
+            'mean_neighbor_pe_temporal': original_temporal_data.get('mean_neighbor_pe_temporal', np.nan),
             'mean_2nd_neighbor_volume_temporal': original_temporal_data.get('mean_2nd_neighbor_volume_temporal', np.nan),
             'std_2nd_neighbor_volume_temporal': original_temporal_data.get('std_2nd_neighbor_volume_temporal', np.nan),
             'mean_2nd_neighbor_free_volume_temporal': original_temporal_data.get('mean_2nd_neighbor_free_volume_temporal', np.nan),
@@ -216,6 +218,15 @@ def csv_export(initial_atom_data_list, all_analysis_results, params, analysis_le
             'mean_angle_liketype_temporal': original_temporal_data.get('mean_angle_liketype_temporal', np.nan),
             'mean_angle_unliketype_temporal': original_temporal_data.get('mean_angle_unliketype_temporal', np.nan),
             'mean_angle_mixedtype_temporal': original_temporal_data.get('mean_angle_mixedtype_temporal', np.nan),
+            # Thermodynamic columns
+            'pe_atom_temporal': original_temporal_data.get('pe_atom_temporal', np.nan),
+            'pe_atom_std_temporal': original_temporal_data.get('pe_atom_std_temporal', np.nan),
+            'hydrostatic_pressure_temporal': original_temporal_data.get('hydrostatic_pressure_temporal', np.nan),
+            'von_mises_stress_temporal': original_temporal_data.get('von_mises_stress_temporal', np.nan),
+            'deviatoric_norm_temporal': original_temporal_data.get('deviatoric_norm_temporal', np.nan),
+            'stress_anisotropy_temporal': original_temporal_data.get('stress_anisotropy_temporal', np.nan),
+            'local_enthalpy_temporal': original_temporal_data.get('local_enthalpy_temporal', np.nan),
+            'excess_energy_temporal': original_temporal_data.get('excess_energy_temporal', np.nan),
         }
 
         neighbors_dict = original_temporal_data.get('neighbors_by_type_temporal', {})
@@ -281,15 +292,21 @@ def csv_export(initial_atom_data_list, all_analysis_results, params, analysis_le
         'mean_neighbor_pentagon_fraction_temporal', 'std_neighbor_pentagon_fraction_temporal',
         'mean_neighbor_CN_temporal', 'mean_neighbor_free_volume_temporal',
         'mean_neighbor_asphericity_temporal',
+        'local_energy_fluctuation_temporal', 'mean_neighbor_pe_temporal',
         'mean_2nd_neighbor_volume_temporal', 'std_2nd_neighbor_volume_temporal',
         'mean_2nd_neighbor_free_volume_temporal', 'mean_2nd_neighbor_pentagon_fraction_temporal',
         'mean_2nd_neighbor_CN_temporal', 'cu_fraction_2nd_shell_temporal', 'zr_fraction_2nd_shell_temporal',
         'mean_3rd_neighbor_volume_temporal', 'std_3rd_neighbor_volume_temporal',
         'mean_3rd_neighbor_free_volume_temporal', 'mean_3rd_neighbor_pentagon_fraction_temporal',
         'mean_3rd_neighbor_CN_temporal', 'cu_fraction_3rd_shell_temporal', 'zr_fraction_3rd_shell_temporal',
-        'mean_angle_all_temporal', 'std_angle_all_temporal', 'skewness_angle_all_temporal',
-        'mean_angle_liketype_temporal', 'mean_angle_unliketype_temporal', 'mean_angle_mixedtype_temporal',
-    ]
+            'mean_angle_all_temporal', 'std_angle_all_temporal', 'skewness_angle_all_temporal',
+            'mean_angle_liketype_temporal', 'mean_angle_unliketype_temporal', 'mean_angle_mixedtype_temporal',
+            'pe_atom_temporal', 'pe_atom_std_temporal',
+            'hydrostatic_pressure_temporal', 'von_mises_stress_temporal',
+            'deviatoric_norm_temporal', 'stress_anisotropy_temporal',
+            'local_enthalpy_temporal',
+            'excess_energy_temporal',
+        ]
     column_order.extend(neighbor_type_cols)
     existing_columns = df_final_results.columns.tolist()
     filtered_column_order = [col for col in column_order if col in existing_columns]

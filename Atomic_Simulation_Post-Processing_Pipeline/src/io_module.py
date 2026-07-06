@@ -23,6 +23,7 @@ Dependencies:
 """
 
 import logging
+import numpy as np
 import pandas as pd
 from io import StringIO
 
@@ -112,8 +113,35 @@ def read_lammps_dump(dump_filename, type_radius_filename='input.txt', atomic_rad
         # Map radii to atoms
         atom_dataframe['radius'] = atom_dataframe['type'].map(type_to_radius_map)
 
-        # Keep only relevant columns
-        atom_dataframe = atom_dataframe[['id', 'type', 'x', 'y', 'z', 'radius']]
+        # Rename thermodynamic columns to clean internal names
+        rename_map = {
+            'c_pe_atom': 'pe_atom',
+            'c_stress_atom[1]': 'stress_xx',
+            'c_stress_atom[2]': 'stress_yy',
+            'c_stress_atom[3]': 'stress_zz',
+            'c_stress_atom[4]': 'stress_xy',
+            'c_stress_atom[5]': 'stress_xz',
+            'c_stress_atom[6]': 'stress_yz',
+        }
+        atom_dataframe.rename(
+            columns={k: v for k, v in rename_map.items() if k in atom_dataframe.columns},
+            inplace=True
+        )
+
+        # Check for pe_atom; set to NaN if missing (older dump files)
+        if 'pe_atom' not in atom_dataframe.columns:
+            atom_dataframe['pe_atom'] = np.nan
+            logging.warning(
+                f"Column 'c_pe_atom' not found in {dump_filename}. "
+                "Setting pe_atom to NaN for all atoms."
+            )
+
+        # Keep only relevant columns (include thermodynamic columns if present)
+        base_cols = ['id', 'type', 'x', 'y', 'z', 'radius']
+        thermo_cols = ['pe_atom', 'stress_xx', 'stress_yy', 'stress_zz',
+                       'stress_xy', 'stress_xz', 'stress_yz']
+        keep_cols = base_cols + [c for c in thermo_cols if c in atom_dataframe.columns]
+        atom_dataframe = atom_dataframe[keep_cols]
 
     except Exception as e:
         raise ValueError(f"Error processing LAMMPS dump file '{dump_filename}': {e}")

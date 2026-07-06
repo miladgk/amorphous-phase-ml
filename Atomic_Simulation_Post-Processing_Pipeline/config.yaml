@@ -13,21 +13,21 @@ G_MIN_PEAK_PROMINENCE: 0.05
 MPI_PARTIAL_DIR: outputs/mpi_partials
 MRO_DEPTH: 3
 NUM_BINS: 100
-PLOT_OUTPUT_FILE: outputs/sample_peak_polyamorphous.png
+PLOT_OUTPUT_FILE: "outputs/sample_peak_polyamorphous.png"
 PLOT_SAMPLE_ATOM_ID: 35
 R1_MAX_SEARCH_R: 4.0
 R_MAX: 12.0
 R_MIN: 0.01
 SMOOTHING_POLYORDER: 5
 SMOOTHING_WINDOW: 11
-SNAPSHOT_DIRECTORY: files/snapshots_polyamorphous/
+SNAPSHOT_DIRECTORY: "../Machine_Learning_Pipeline_for_Materials_Science/data/polyamorphous/"
 S_value: 2
 T_MIN_PEAK_DISTANCE: 4
 T_MIN_PEAK_PROMINENCE: 0.05
 T_R_MAX_FACTOR: 2.2
 T_R_MIN_FACTOR: 1.5
 VALIDATION_TOLERANCE: 0.5
-WORKER_TIMEOUT: 300
+WORKER_TIMEOUT: 600
 atomic_radii:
   1: 1.28
   2: 1.6
@@ -35,5 +35,5 @@ composition:
   compute_from_snapshot: true
   type_1_fraction: 0.5
   type_2_fraction: 0.5
-output_csv: outputs/features_polyamorphous.csv
+output_csv: "outputs/features_polyamorphous.csv"
 radius_file: input.txt

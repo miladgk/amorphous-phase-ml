@@ -1,0 +1,81 @@
+# =============================================================================
+# General Reference-Phase Classification Configuration
+# =============================================================================
+# This config tells the pipeline what reference phases to train on, what
+# features to use, and where to find the target structure for inference.
+#
+# Each reference_phase entry points to a post-processing output CSV where
+# EVERY atom belongs to that single named phase. The framework will:
+#   1. Load each reference CSV independently
+#   2. Apply material-agnostic normalization (per-structure R1, z-score)
+#   3. Assign the phase name as the label
+#   4. Concatenate and train
+#   5. Predict on the target structure
+
+reference_phases:
+  - name: "Cu50Zr50"                # arbitrary user-chosen label
+    csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_5050.csv"
+  - name: "Cu46Zr54"
+    csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_4654.csv"
+  - name: "Cu64Zr36"
+    csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_6436.csv"
+  # Users can add more reference phases here. Examples:
+  # - name: "Ni60Nb40"
+  #   csv_path: "path/to/features_Ni60Nb40.csv"
+  # - name: "pure_Fe"
+  #   csv_path: "path/to/features_pure_Fe.csv"
+
+target_structure:
+  csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_polyamorphous.csv"
+  # Optional: if the target dump file is available (for OVITO export of positions)
+  dump_path: "Machine_Learning_Pipeline_for_Materials_Science/data/polyamorphous/anneal_combined_0.lammpstrj"
+
+output_dir: "general_phase_id_output"
+
+# Feature whitelist: exact columns from the raw post-processing CSV to include.
+# If provided, ONLY these features are used (with appropriate normalization applied).
+# This is critical for matching the behavior of the original validated Config 2 model.
+# Leave as null to use the general rules (all dimensionless + normalized length/energy/stress).
+# The original validated Config 2 used exactly these 18 features:
+feature_whitelist:
+  - "R1_SG"                        # per-atom length-scale reference (passed through)
+  - "voronoi_volume_temporal"      # volume -> normalized by per-atom R1^3
+  - "CN_temporal"                  # dimensionless, passed through
+  - "q4"                           # dimensionless
+  - "q6"                           # dimensionless
+  - "gaussian_peak2_center"        # distance -> normalized by per-atom R1
+  - "gaussian_peak3_center"        # distance -> normalized by per-atom R1
+  - "neighbor_1"                   # dimensionless (neighbor count)
+  - "neighbor_2"                   # dimensionless (neighbor count)
+  - "excess_energy_temporal"       # already local (per-atom, per-type), passed through
+  - "local_energy_fluctuation_temporal"  # already local, passed through
+  - "hydrostatic_pressure_temporal" # stress -> z-score per structure
+  - "von_mises_stress_temporal"    # stress -> z-score per structure
+  - "deviatoric_norm_temporal"     # stress -> z-score per structure
+  - "stress_anisotropy_temporal"   # stress -> z-score per structure
+  - "local_enthalpy_temporal"      # energy -> z-score per structure
+  - "pe_atom_std_temporal"         # energy -> z-score per structure
+  - "pe_volume_residual"           # energy -> z-score per structure
+
+# Model hyperparameters (passed to HistGradientBoostingClassifier)
+model:
+  type: "HistGradientBoostingClassifier"
+  random_state: 42
+  early_stopping: true
+  validation_fraction: 0.1
+  n_iter_no_change: 10
+  max_iter: 500
+  learning_rate: 0.05
+  max_leaf_nodes: 31
+  min_samples_leaf: 20
+
+# Spatial holdout parameters
+validation:
+  split_axis: "x"                  # which coordinate axis to split on
+  boundary_cutoff: 3.5             # Angstrom — atoms within this distance of the
+                                   # split plane are EXCLUDED from both train and test
+
+# Inference confidence threshold
+inference:
+  confidence_threshold: 0.50       # below this, atom is marked as "Uncertain"
+  multiple_thresholds: [0.50, 0.60, 0.70, 0.80, 0.90]  # for detailed reporting

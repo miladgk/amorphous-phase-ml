@@ -1,0 +1,24 @@
+# Centralized Project Path Configuration
+paths:
+  post_processing_output_dir: "Atomic_Simulation_Post-Processing_Pipeline/outputs/"
+  ml_data_dir: "Machine_Learning_Pipeline_for_Materials_Science/data/"
+  ml_models_dir: "Machine_Learning_Pipeline_for_Materials_Science/outputs/models/"
+  general_phase_dir: "general_phase_id_output/"
+  post_processing:
+    features_5050: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_5050.csv"
+    features_4654: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_4654.csv"
+    features_6436: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_6436.csv"
+    features_polyamorphous: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_polyamorphous.csv"
+  ml_data:
+    features_5050: "Machine_Learning_Pipeline_for_Materials_Science/data/features_5050.csv"
+    features_4654: "Machine_Learning_Pipeline_for_Materials_Science/data/features_4654.csv"
+    features_6436: "Machine_Learning_Pipeline_for_Materials_Science/data/features_6436.csv"
+    features_polyamorphous: "Machine_Learning_Pipeline_for_Materials_Science/data/features_polyamorphous.csv"
+  polyamorphous_input_dir: "Machine_Learning_Pipeline_for_Materials_Science/data/polyamorphous/"
+  general_phase:
+    model: "general_phase_id_output/model.pkl"
+    phase_mapping: "general_phase_id_output/phase_mapping.csv"
+    norm_params: "general_phase_id_output/norm_params.pkl"
+  trajectory_output:
+    dir: "Machine_Learning_Pipeline_for_Materials_Science/outputs/phase_labeled_trajectory/"
+    phase_mapping: "Machine_Learning_Pipeline_for_Materials_Science/outputs/phase_labeled_trajectory/phase_id_to_name.json"

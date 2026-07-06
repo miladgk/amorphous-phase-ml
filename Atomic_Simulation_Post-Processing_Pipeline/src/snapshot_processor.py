@@ -59,6 +59,65 @@ logging.getLogger("freud").setLevel(logging.WARNING)
 # ------------------------------------------------------------------------------
 # Core function
 # ------------------------------------------------------------------------------
+def compute_stress_invariants(stress_xx, stress_yy, stress_zz,
+                               stress_xy, stress_xz, stress_yz,
+                               voronoi_volume, pe_atom=None):
+    """
+    LAMMPS stress per atom has units of pressure * volume (bar * Angstrom^3).
+    To convert to pressure (bar), divide by atomic volume.
+    voronoi_volume: in Angstrom^3
+    pe_atom: per-atom potential energy in eV (optional, for local_enthalpy)
+    
+    Returns hydrostatic_pressure (bar), von_mises_stress (bar), deviatoric_norm (bar),
+             local_enthalpy (eV)
+    """
+    # Conversion factor: bar * Angstrom^3 to eV
+    # 1 bar = 1e5 Pa, 1 Pa*m^3 = 1 J, 1 eV = 1.6021766208e-19 J
+    # 1 bar * Angstrom^3 = 1e5 * (1e-10)^3 J = 1e-25 J
+    # = 1e-25 / 1.6021766208e-19 eV = 6.241509e-7 eV
+    BAR_ANG3_TO_EV = 1e-4 / 160.21766208  # ≈ 6.241509e-7
+    
+    if voronoi_volume is None or voronoi_volume < 1e-8:
+        return np.nan, np.nan, np.nan, np.nan
+    
+    # Convert from stress*volume to stress (pressure)
+    # Note: LAMMPS virial stress sign convention: positive = compression
+    sxx = stress_xx / voronoi_volume
+    syy = stress_yy / voronoi_volume
+    szz = stress_zz / voronoi_volume
+    sxy = stress_xy / voronoi_volume
+    sxz = stress_xz / voronoi_volume
+    syz = stress_yz / voronoi_volume
+    
+    # Hydrostatic pressure: mean of diagonal (positive = compression in LAMMPS convention)
+    hydrostatic = (sxx + syy + szz) / 3.0
+    
+    # Von Mises stress: scalar measure of deviatoric (shear) stress
+    von_mises = np.sqrt(0.5 * (
+        (sxx - syy)**2 + (syy - szz)**2 + (szz - sxx)**2 +
+        6.0 * (sxy**2 + sxz**2 + syz**2)
+    ))
+    
+    # Deviatoric stress norm: Frobenius norm of deviatoric part
+    # Captures full shear information beyond von Mises scalar
+    s_dev_xx = sxx - hydrostatic
+    s_dev_yy = syy - hydrostatic
+    s_dev_zz = szz - hydrostatic
+    deviatoric_norm = np.sqrt(
+        s_dev_xx**2 + s_dev_yy**2 + s_dev_zz**2 +
+        2*(sxy**2 + sxz**2 + syz**2)
+    )
+    
+    # Local enthalpy: H = PE + P*V (with unit conversion bar*A^3 -> eV)
+    # P is hydrostatic pressure in bar, V is voronoi_volume in A^3
+    if pe_atom is not None and np.isfinite(pe_atom) and np.isfinite(hydrostatic):
+        local_enthalpy = pe_atom + (hydrostatic * voronoi_volume * BAR_ANG3_TO_EV)
+    else:
+        local_enthalpy = np.nan
+    
+    return hydrostatic, von_mises, deviatoric_norm, local_enthalpy
+
+
 def compute_bond_angle_features(atom_pos, neighbor_positions, neighbor_types,
                                   atom_type, box_lengths):
     """
@@ -143,10 +202,11 @@ def compute_neighbor_averaged_voronoi_features(atom_index, neighbor_indices,
         return {k: np.nan for k in [
             'mean_neighbor_volume', 'std_neighbor_volume',
             'mean_neighbor_pentagon_fraction', 'std_neighbor_pentagon_fraction',
-            'mean_neighbor_CN', 'mean_neighbor_free_volume', 'mean_neighbor_asphericity'
+            'mean_neighbor_CN', 'mean_neighbor_free_volume', 'mean_neighbor_asphericity',
+            'local_energy_fluctuation', 'mean_neighbor_pe'
         ]}
     
-    vols, pents, cns, fvs, asps = [], [], [], [], []
+    vols, pents, cns, fvs, asps, pes = [], [], [], [], [], []
     for nb_idx in neighbor_indices:
         if nb_idx not in per_atom_features_dict:
             continue
@@ -156,6 +216,7 @@ def compute_neighbor_averaged_voronoi_features(atom_index, neighbor_indices,
         if not np.isnan(nb['num_neighbors']): cns.append(nb['num_neighbors'])
         if not np.isnan(nb['free_volume']): fvs.append(nb['free_volume'])
         if not np.isnan(nb['asphericity_voronoi']): asps.append(nb['asphericity_voronoi'])
+        if not np.isnan(nb.get('pe_atom', np.nan)): pes.append(nb['pe_atom'])
     
     return {
         'mean_neighbor_volume': np.mean(vols) if vols else np.nan,
@@ -165,6 +226,8 @@ def compute_neighbor_averaged_voronoi_features(atom_index, neighbor_indices,
         'mean_neighbor_CN': np.mean(cns) if cns else np.nan,
         'mean_neighbor_free_volume': np.mean(fvs) if fvs else np.nan,
         'mean_neighbor_asphericity': np.mean(asps) if asps else np.nan,
+        'local_energy_fluctuation': np.std(pes) if len(pes) > 1 else np.nan,
+        'mean_neighbor_pe': np.mean(pes) if pes else np.nan,
     }
 
 
@@ -303,6 +366,20 @@ def process_single_snapshot(snapshot_file, params, bins_for_rdf_calc, bin_volume
         types = df_atoms['type'].values
         radii = df_atoms['radius'].values
         num_atoms = len(ids)
+
+        # Extract thermodynamic data if present (from io_module rename)
+        pe_atom_raw = df_atoms['pe_atom'].values if 'pe_atom' in df_atoms.columns else np.full(num_atoms, np.nan)
+        stress_xx_raw = df_atoms['stress_xx'].values if 'stress_xx' in df_atoms.columns else np.full(num_atoms, np.nan)
+        stress_yy_raw = df_atoms['stress_yy'].values if 'stress_yy' in df_atoms.columns else np.full(num_atoms, np.nan)
+        stress_zz_raw = df_atoms['stress_zz'].values if 'stress_zz' in df_atoms.columns else np.full(num_atoms, np.nan)
+        stress_xy_raw = df_atoms['stress_xy'].values if 'stress_xy' in df_atoms.columns else np.full(num_atoms, np.nan)
+        stress_xz_raw = df_atoms['stress_xz'].values if 'stress_xz' in df_atoms.columns else np.full(num_atoms, np.nan)
+        stress_yz_raw = df_atoms['stress_yz'].values if 'stress_yz' in df_atoms.columns else np.full(num_atoms, np.nan)
+        has_thermo = np.any(np.isfinite(pe_atom_raw)) or np.any(np.isfinite(stress_xx_raw))
+        if has_thermo:
+            logging.info(f"Thermodynamic data detected for {snapshot_file}.")
+        else:
+            logging.info(f"No thermodynamic data in {snapshot_file}. Stress features will be NaN.")
 
         # Compute simulation box dimensions and density
         box_size = np.array([
@@ -519,6 +596,73 @@ def process_single_snapshot(snapshot_file, params, bins_for_rdf_calc, bin_volume
         q6_avg = steinhardt_6_avg.particle_order
 
         # ----------------------------------------------------------------------
+        # Compute thermodynamic stress invariants (requires Voronoi volumes)
+        # ----------------------------------------------------------------------
+        hydrostatic_list = np.full(num_atoms, np.nan)
+        von_mises_list = np.full(num_atoms, np.nan)
+        deviatoric_norm_list = np.full(num_atoms, np.nan)
+        stress_anisotropy_list = np.full(num_atoms, np.nan)
+        local_enthalpy_list = np.full(num_atoms, np.nan)
+        
+        if has_thermo:
+            for atom_index in range(num_atoms):
+                vv = vor_volumes[atom_index]
+                if vv is None or np.isnan(vv) or vv < 1e-8:
+                    continue
+                hp, vm, dn, enthalpy = compute_stress_invariants(
+                    stress_xx_raw[atom_index], stress_yy_raw[atom_index],
+                    stress_zz_raw[atom_index], stress_xy_raw[atom_index],
+                    stress_xz_raw[atom_index], stress_yz_raw[atom_index],
+                    vv, pe_atom=pe_atom_raw[atom_index]
+                )
+                hydrostatic_list[atom_index] = hp
+                von_mises_list[atom_index] = vm
+                deviatoric_norm_list[atom_index] = dn
+                stress_anisotropy_list[atom_index] = vm / (abs(hp) + 1e-10)
+                local_enthalpy_list[atom_index] = enthalpy
+        
+        # Compute per-snapshot excess energy: deviation from per-type mean PE
+        # This is equivalent to: df.groupby('type')['pe_atom'].transform(lambda x: x - x.mean())
+        # Uses column name 'type' for atom species (from io_module.py)
+        excess_energy_list = np.full(num_atoms, np.nan)
+        if has_thermo and np.any(np.isfinite(pe_atom_raw)):
+            for atom_type_val in np.unique(types):
+                mask = (types == atom_type_val) & np.isfinite(pe_atom_raw)
+                if mask.sum() > 0:
+                    type_mean = np.mean(pe_atom_raw[mask])
+                    excess_energy_list[mask] = pe_atom_raw[mask] - type_mean
+        
+        # Sanity check: print excess_energy per-type means (should be ~0)
+        if has_thermo and np.any(np.isfinite(excess_energy_list)):
+            for atom_type_val in np.unique(types):
+                mask = types == atom_type_val
+                valid_mask = mask & np.isfinite(excess_energy_list)
+                if valid_mask.sum() > 0:
+                    logging.info(
+                        f"excess_energy mean for type={int(atom_type_val)}: "
+                        f"{np.mean(excess_energy_list[valid_mask]):.6e} eV "
+                        f"(should be ~0 by construction)"
+                    )
+        
+        # Sanity check: print local_enthalpy stats for first snapshot
+        if has_thermo and np.any(np.isfinite(local_enthalpy_list)):
+            valid_enthalpy = local_enthalpy_list[np.isfinite(local_enthalpy_list)]
+            logging.info(
+                f"local_enthalpy sanity check for {snapshot_file}:\n"
+                f"  count={len(valid_enthalpy)}, mean={np.mean(valid_enthalpy):.4f}, "
+                f"std={np.std(valid_enthalpy):.4f}, min={np.min(valid_enthalpy):.4f}, "
+                f"max={np.max(valid_enthalpy):.4f} eV"
+            )
+            # Compare to pe_atom magnitude
+            valid_pe = pe_atom_raw[np.isfinite(pe_atom_raw)]
+            if len(valid_pe) > 0:
+                logging.info(
+                    f"  pe_atom: mean={np.mean(valid_pe):.4f}, std={np.std(valid_pe):.4f} eV\n"
+                    f"  local_enthalpy and pe_atom are same order of magnitude: "
+                    f"{abs(np.mean(valid_enthalpy)) / abs(np.mean(valid_pe)):.2f}x"
+                )
+
+        # ----------------------------------------------------------------------
         # Assemble atom-level data
         # Voronoi index ⟨n3, n4, n5, n6⟩ is now embedded in voronoi_cells
         # from the freud polytopes (computed inside compute_weighted_voronoi_cells)
@@ -564,6 +708,14 @@ def process_single_snapshot(snapshot_file, params, bins_for_rdf_calc, bin_volume
                     'mean_angle_mixedtype': angle_features['mean_angle_mixedtype'][atom_index],
                     'count_liketype_pairs': angle_features['count_liketype_pairs'][atom_index],
                     'count_unliketype_pairs': angle_features['count_unliketype_pairs'][atom_index],
+                    # Thermodynamic columns
+                    'pe_atom': pe_atom_raw[atom_index],
+                    'hydrostatic_pressure': hydrostatic_list[atom_index],
+                    'von_mises_stress': von_mises_list[atom_index],
+                    'deviatoric_norm': deviatoric_norm_list[atom_index],
+                    'stress_anisotropy': stress_anisotropy_list[atom_index],
+                    'local_enthalpy': local_enthalpy_list[atom_index],
+                    'excess_energy': excess_energy_list[atom_index],
                 })
             else:
                 logging.warning(
@@ -585,6 +737,12 @@ def process_single_snapshot(snapshot_file, params, bins_for_rdf_calc, bin_volume
             atom_id = ad['id']
             orig_idx = id_to_idx[atom_id]
             
+            # CRITICAL: pe_atom must be in atom_data BEFORE MRO Pass 2 runs
+            assert 'pe_atom' in ad, (
+                "pe_atom missing from atom_data at MRO Pass 2 -- PE computation "
+                "must happen BEFORE the MRO pass in the assembly loop, not after."
+            )
+            
             pentagon = None
             n5 = ad.get('n5_voronoi', 0)
             n_sum = (ad.get('n3_voronoi', 0) + ad.get('n4_voronoi', 0) +
@@ -604,11 +762,13 @@ def process_single_snapshot(snapshot_file, params, bins_for_rdf_calc, bin_volume
                 'free_volume': free_vol,
                 'asphericity_voronoi': ad.get('asphericity_voronoi', np.nan),
                 'type': ad.get('type'),
+                'pe_atom': ad.get('pe_atom', np.nan),
             }
         
         mro_keys = ['mean_neighbor_volume', 'std_neighbor_volume',
                     'mean_neighbor_pentagon_fraction', 'std_neighbor_pentagon_fraction',
-                    'mean_neighbor_CN', 'mean_neighbor_free_volume', 'mean_neighbor_asphericity']
+                    'mean_neighbor_CN', 'mean_neighbor_free_volume', 'mean_neighbor_asphericity',
+                    'local_energy_fluctuation', 'mean_neighbor_pe']
         mro_features = {k: np.full(num_atoms, np.nan) for k in mro_keys}
         
         for atom_index in range(num_atoms):
