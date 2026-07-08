@@ -13,12 +13,12 @@
 #   5. Predict on the target structure
 
 reference_phases:
-  - name: "Cu50Zr50"                # arbitrary user-chosen label
-    csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_5050.csv"
+  - name: "Cu50Zr50"
+    csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_5050_csro_fixed.csv"
   - name: "Cu46Zr54"
-    csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_4654.csv"
+    csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_4654_csro_fixed.csv"
   - name: "Cu64Zr36"
-    csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_6436.csv"
+    csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_6436_csro_fixed.csv"
   # Users can add more reference phases here. Examples:
   # - name: "Ni60Nb40"
   #   csv_path: "path/to/features_Ni60Nb40.csv"
@@ -26,7 +26,7 @@ reference_phases:
   #   csv_path: "path/to/features_pure_Fe.csv"
 
 target_structure:
-  csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_polyamorphous.csv"
+  csv_path: "Atomic_Simulation_Post-Processing_Pipeline/outputs/features_polyamorphous_csro_fixed.csv"
   # Optional: if the target dump file is available (for OVITO export of positions)
   dump_path: "Machine_Learning_Pipeline_for_Materials_Science/data/polyamorphous/anneal_combined_0.lammpstrj"
 
@@ -36,7 +36,11 @@ output_dir: "general_phase_id_output"
 # If provided, ONLY these features are used (with appropriate normalization applied).
 # This is critical for matching the behavior of the original validated Config 2 model.
 # Leave as null to use the general rules (all dimensionless + normalized length/energy/stress).
-# The original validated Config 2 used exactly these 18 features:
+# The original validated Config 2 used exactly these 18 features.
+# After confirming csro_unlike_temporal, csro_like_temporal, and
+# mean_neighbor_pe_temporal as genuine non-leaky discriminators
+# (spatial-holdout accuracy 0.9781 for A-vs-B, up from 0.6855 without them),
+# these 3 features are added to the general whitelist (18 -> 21 features).
 feature_whitelist:
   - "R1_SG"                        # per-atom length-scale reference (passed through)
   - "voronoi_volume_temporal"      # volume -> normalized by per-atom R1^3
@@ -56,6 +60,10 @@ feature_whitelist:
   - "local_enthalpy_temporal"      # energy -> z-score per structure
   - "pe_atom_std_temporal"         # energy -> z-score per structure
   - "pe_volume_residual"           # energy -> z-score per structure
+  # --- New features (confirmed non-leaky, spatial-holdout validated) ---
+  - "csro_unlike_temporal"         # dimensionless, passed through
+  - "csro_like_temporal"           # dimensionless, passed through
+  - "mean_neighbor_pe_temporal"    # already local, passed through
 
 # Model hyperparameters (passed to HistGradientBoostingClassifier)
 model:

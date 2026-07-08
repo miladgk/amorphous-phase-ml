@@ -444,39 +444,89 @@ def process_single_snapshot(snapshot_file, params, bins_for_rdf_calc, bin_volume
         # ----------------------------------------------------------------------
         # Compute Warren-Cowley Chemical Short-Range Order (CSRO)
         # ----------------------------------------------------------------------
+        # Generic formulation (works for ANY number of atom types):
+        #   For each atom i, let:
+        #     - n_same = count of neighbors with the same type as atom i
+        #     - n_other = count of neighbors with a different type
+        #     - CN = n_same + n_other
+        #     - p_same = n_same / CN
+        #     - p_other = n_other / CN
+        #     - x_self = global fraction of atom i's type
+        #     - x_other = 1 - x_self (global fraction of all other types combined)
+        #   Then:
+        #     csro_like   = 1 - (p_same / x_self)   — positive = clustering of like type
+        #     csro_unlike = 1 - (p_other / x_other)  — positive = avoidance of unlike type
+        #
+        # Edge cases:
+        #   Single-element system (x_self=1.0, x_other=0.0):
+        #     csro_like = 0.0 (random: all neighbors are same type)
+        #     csro_unlike = 1.0 (no unlike neighbors exist — notionally perfect ordering)
+        #   These are well-defined limits, not NaN.
+        #
         # Get global composition from params
         comp = params.get('composition', {})
         if comp.get('compute_from_snapshot', False):
             # Compute from actual atom counts in this snapshot
-            n_type1 = int((types == 1).sum())
-            n_type2 = int((types == 2).sum())
-            total = n_type1 + n_type2
-            x_type1 = n_type1 / total if total > 0 else 0.5
-            x_type2 = n_type2 / total if total > 0 else 0.5
+            unique_types, counts = np.unique(types, return_counts=True)
+            total = int(counts.sum())
+            global_fractions = {}
+            for t, c in zip(unique_types, counts):
+                global_fractions[t] = int(c) / total if total > 0 else 0.0
         else:
-            x_type1 = float(comp.get('type_1_fraction', 0.5))
-            x_type2 = float(comp.get('type_2_fraction', 0.5))
+            # Use user-provided fractions (keys like 'type_1_fraction', 'type_2_fraction', etc.)
+            global_fractions = {}
+            for key, val in comp.items():
+                if key.startswith('type_') and key.endswith('_fraction'):
+                    type_num = int(key.split('_')[1])
+                    global_fractions[type_num] = float(val)
+            # Fallback: if no composition key matches, compute from snapshot
+            if not global_fractions:
+                unique_types, counts = np.unique(types, return_counts=True)
+                total = int(counts.sum())
+                for t, c in zip(unique_types, counts):
+                    global_fractions[t] = int(c) / total if total > 0 else 0.0
         
         csro_unlike_list = np.full(num_atoms, np.nan)
         csro_like_list = np.full(num_atoms, np.nan)
         
         for atom_index in range(num_atoms):
             atom_type = types[atom_index]
-            n1 = neighbors_by_type[ids[atom_index]].get(1, 0)
-            n2 = neighbors_by_type[ids[atom_index]].get(2, 0)
-            cn = n1 + n2
+            nbt = neighbors_by_type[ids[atom_index]]
+            
+            n_same = 0
+            n_other = 0
+            cn = 0
+            for nb_type, count in nbt.items():
+                cn += count
+                if nb_type == atom_type:
+                    n_same += count
+                else:
+                    n_other += count
+            
             if cn == 0:
                 continue
             
-            p1 = n1 / cn
-            p2 = n2 / cn
+            x_self = global_fractions.get(atom_type, 0.0)
+            x_other = 1.0 - x_self
             
-            if atom_type == 1:  # Cu atom: unlike = tendency to have Zr neighbors
-                csro_unlike = 1.0 - (p2 / x_type2) if x_type2 > 1e-10 else np.nan
-                csro_like = 1.0 - (p1 / x_type1) if x_type1 > 1e-10 else np.nan
-            else:  # Zr atom: unlike = tendency to have Cu neighbors
-                csro_unlike = 1.0 - (p1 / x_type1) if x_type1 > 1e-10 else np.nan
-                csro_like = 1.0 - (p2 / x_type2) if x_type2 > 1e-10 else np.nan
+            p_same = n_same / cn
+            p_other = n_other / cn
+            
+            # Warren-Cowley CSRO: 1 - (observed_fraction / expected_fraction)
+            # Edge cases produce sensible limits:
+            #   x_self=1.0 (single-element): p_same=1.0, so csro_like=0.0 (random).
+            #     x_other=0.0 and p_other=0.0: csro_unlike=1.0 (no unlike neighbors).
+            #   x_self=0 (impossible): both are NaN.
+            if x_self > 1e-10:
+                csro_like = 1.0 - (p_same / x_self)
+            else:
+                csro_like = np.nan
+            
+            if x_other > 1e-10:
+                csro_unlike = 1.0 - (p_other / x_other)
+            else:
+                # Single-element: no unlike neighbors, so csro_unlike = 1.0
+                csro_unlike = 1.0
             
             csro_unlike_list[atom_index] = csro_unlike
             csro_like_list[atom_index] = csro_like

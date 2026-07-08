@@ -226,7 +226,9 @@ WHITELIST = [
     'excess_energy_temporal','local_energy_fluctuation_temporal',
     'hydrostatic_pressure_temporal','von_mises_stress_temporal',
     'deviatoric_norm_temporal','stress_anisotropy_temporal',
-    'local_enthalpy_temporal','pe_atom_std_temporal','pe_volume_residual'
+    'local_enthalpy_temporal','pe_atom_std_temporal','pe_volume_residual',
+    # New features (CSRO + neighbor PE, confirmed non-leaky via spatial holdout)
+    'csro_unlike_temporal','csro_like_temporal','mean_neighbor_pe_temporal'
 ]
 
 # Fixed phase ID mapping (from trained model: classes [0, 1, 2])

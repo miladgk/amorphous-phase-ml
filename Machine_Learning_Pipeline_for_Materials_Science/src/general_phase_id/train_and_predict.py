@@ -19,6 +19,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.inspection import permutation_importance
+import freud
 
 sys.path.insert(0, 'Machine_Learning_Pipeline_for_Materials_Science/src')
 from general_phase_id.build_descriptors import (
@@ -483,22 +484,24 @@ def export_ovito(
             y = np.zeros(len(preds))
             z = np.zeros(len(preds))
     
-    # Write extended XYZ
+    # Write extended XYZ with actual atom types preserved
     xyz_path = os.path.join(output_dir, 'predicted_phases.xyz')
     n_atoms = len(preds)
     
-    # Extended XYZ header: "number_of_atoms"
-    # Second line: properties and their types (adapted for OVITO)
-    prop_types = 'I:1:phase:I:1:confidence:R:1:pos:R:3'
-    property_names = f'phase="{phase_names[0]}" confidence=1.0 pos={x[0]:.6f} {y[0]:.6f} {z[0]:.6f}'
+    # Get atom types from raw CSV (preserve actual element identities)
+    type_to_element = {1: 'Cu', 2: 'Zr', 3: 'Al'}  # generic map
+    if 'type' in raw.columns:
+        elements = [type_to_element.get(t, 'X') for t in raw['type'].values]
+    else:
+        elements = ['A'] * n_atoms
     
     with open(xyz_path, 'w') as f:
         f.write(f'{n_atoms}\n')
         f.write(f'Lattice="1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0" '
-                f'Properties=species:R:1:pos:R:3:phase:I:1:confidence:R:1\n')
+                f'Properties=species:S:1:pos:R:3:phase:I:1:confidence:R:1\n')
         for i in range(n_atoms):
-            # Use generic species 'A' -- phase label carries the real info
-            f.write(f'A {x[i]:.6f} {y[i]:.6f} {z[i]:.6f} {preds[i]} {confidence[i]:.6f}\n')
+            # Preserve actual atom type (Cu/Zr) from the raw data
+            f.write(f'{elements[i]} {x[i]:.6f} {y[i]:.6f} {z[i]:.6f} {preds[i]} {confidence[i]:.6f}\n')
     
     # Write phase mapping
     mapping_path = os.path.join(output_dir, 'phase_mapping.csv')
