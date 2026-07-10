@@ -1,28 +1,49 @@
-# Large data files
-*.lammpstrj
-*.csv
-
-# Windows NUL device file (sometimes incorrectly created)
-NUL
-
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-*.egg-info/
-dist/
-build/
+*.pyc
+*.pyo
+*.nbc
+*.nbi
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# OS
-.DS_Store
-Thumbs.db
+# Large regenerable outputs (reference CSVs ~173MB total, not tracked)
+Atomic_Simulation_Post-Processing_Pipeline/outputs/features_5050_csro_fixed.csv
+Atomic_Simulation_Post-Processing_Pipeline/outputs/features_4654_csro_fixed.csv
+Atomic_Simulation_Post-Processing_Pipeline/outputs/features_6436_csro_fixed.csv
+Atomic_Simulation_Post-Processing_Pipeline/outputs/features_polyamorphous_csro_fixed.csv
 
-# Logs
+# Per-snapshot temp files (regenerable from raw dumps)
+Atomic_Simulation_Post-Processing_Pipeline/outputs/per_snapshot/
+
+# Old/obsolete data CSVs (superseded, should not be recreated)
+**/features_5050.csv
+**/features_4654.csv
+**/features_6436.csv
+**/features_polyamorphous.csv
+Machine_Learning_Pipeline_for_Materials_Science/data/features_*.csv
+
+# Old trajectory processing temp files
+Machine_Learning_Pipeline_for_Materials_Science/outputs/phase_labeled_trajectory/_features_*.csv
+Machine_Learning_Pipeline_for_Materials_Science/outputs/phase_labeled_trajectory/features_poly.csv
+
+# Old model artifacts (superseded by general_phase_id_output/model.pkl)
+Machine_Learning_Pipeline_for_Materials_Science/outputs/models/*.pkl
+Machine_Learning_Pipeline_for_Materials_Science/outputs/models/*.joblib
+
+# Old analysis artifacts
+Machine_Learning_Pipeline_for_Materials_Science/outputs/plots/
+Machine_Learning_Pipeline_for_Materials_Science/outputs/shap_data/
+
+# Oversized regenerable exports
+general_phase_id_output/predictions.csv
+general_phase_id_output/predicted_phases.xyz
+
+# Log files
 *.log
