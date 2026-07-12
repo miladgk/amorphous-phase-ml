@@ -1,5 +1,6 @@
 # Machine Learning Pipeline for Materials Science
 
+[![CI](https://github.com/MiladGK/ml_rdf/actions/workflows/ci.yml/badge.svg)](https://github.com/MiladGK/ml_rdf/actions/workflows/ci.yml)
 This project provides a complete, production-ready machine learning pipeline for classifying per-atom materials data into structural phases. It streamlines the entire workflow from **data preparation and group-aware splitting** to **model training, hyperparameter tuning, evaluation, and explainability** — all configurable from a single YAML file.
 
 The pipeline is optimized for speed: **full training runs in ~5 minutes with 0.854 CV score**, compared to ~28 minutes in the original version.

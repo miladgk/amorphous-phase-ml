@@ -1,4 +1,3 @@
-feature_ranges_file: /mnt/d/Projects/Amorphous_RDF/GitHub/general_phase_id_output/feature_ranges.pkl
 feature_whitelist:
 - R1_SG
 - voronoi_volume_temporal
@@ -36,7 +35,6 @@ model:
   random_state: 42
   type: HistGradientBoostingClassifier
   validation_fraction: 0.1
-norm_params_file: /mnt/d/Projects/Amorphous_RDF/GitHub/general_phase_id_output/norm_params.pkl
 output_dir: general_phase_id_output
 reference_phases:
 - csv_path: Atomic_Simulation_Post-Processing_Pipeline/outputs/features_5050_csro_fixed.csv
