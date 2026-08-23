@@ -373,18 +373,3 @@ The deployed `ref_config.yaml` lists 21 features (18 original + 3 CSRO), but the
 
 ### 9.7 process_trajectory.py has stale whitelist
 The `WHITELIST` in `process_trajectory.py` was updated to include CSRO features but the 18-feature model that was validated doesn't use them. This file needs updating for consistency.
-
----
-
-## ITEMS FOUND IN CODE THAT DON'T MATCH EARLIER CONVERSATION
-
-1. **Config file lists 21 features** (includes csro_unlike_temporal, csro_like_temporal, mean_neighbor_pe_temporal) but the agreed deployed model uses 18 features. **The config was never reverted** after the 21-feature test.
-
-2. **q4_5a and q6_5a columns exist** in the CSVs (added by ad-hoc script) but are NOT in `_is_already_dimensionless()` in `build_descriptors.py`. If the whitelist were to include them, they'd be caught by the "unknown feature" exclusion and dropped.
-
-3. **norm_params.pkl is NOT saved** by the pipeline. The conversation assumed it was stored at `general_phase_id_output/norm_params.pkl` but this file does not exist — `process_trajectory.py` would fail with a `FileNotFoundError`.
-
-4. **The 0.9781/0.6855 numbers in config comments** don't match any result produced in this conversation. These appear to be from a much earlier A-vs-B binary test that wasn't reproduced. The current 3-class numbers are ~0.75 accuracy, ~0.73 macro F1.
-
-5. **The `process_trajectory.py` whitelist** still contains the 21-feature list (18 original + 3 CSRO from the earlier edit), not the agreed 18-feature list. Running it as-is would train with different features than those validated.
-</write_to_file>
