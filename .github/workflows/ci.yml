@@ -27,7 +27,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install -r requirements-dev.txt
+        pip install -r Machine_Learning_Pipeline_for_Materials_Science/requirements-dev.txt
         
     - name: Run tests
       run: |
