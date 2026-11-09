@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amorphous Phase ML — Interactive Simulation & Analysis Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.2);
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --phase-a: #38bdf8;
+      --phase-b: #c084fc;
+      --phase-c: #fb923c;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 24px;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    header {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+      position: relative;
+      overflow: hidden;
+    }
+    header::before {
+      content: '';
+      position: absolute;
+      top: -50px;
+      right: -50px;
+      width: 250px;
+      height: 250px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      background: linear-gradient(to right, #ffffff, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      max-width: 900px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .stat-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
+    }
+    .stat-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .stat-value {
+      font-size: 1.85rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stat-sub {
+      font-size: 0.8rem;
+      color: var(--success);
+      margin-top: 4px;
+    }
+    .nav-tabs {
+      display: flex;
+      gap: 10px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover {
+      color: var(--text);
+      background: rgba(255,255,255,0.08);
+    }
+    .tab-btn.active {
+      color: #0f172a;
+      background: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+    .tab-panel {
+      display: none;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+    .tab-panel.active {
+      display: block;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-desc {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+    .plot-container {
+      background: #090d16;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+    }
+    .plot-container img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+      gap: 24px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 0.95rem;
+    }
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+    th {
+      background: rgba(255,255,255,0.03);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .pill-phase-a { background: rgba(56, 189, 248, 0.2); color: var(--phase-a); }
+    .pill-phase-b { background: rgba(192, 132, 252, 0.2); color: var(--phase-b); }
+    .pill-phase-c { background: rgba(251, 146, 60, 0.2); color: var(--phase-c); }
+    .pill-uncertain { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+    .btn {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      text-decoration: none;
+      color: #0f172a;
+      background: var(--accent);
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: #7dd3fc;
+    }
+    .btn-outline {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    .btn-outline:hover {
+      background: rgba(56, 189, 248, 0.1);
+    }
+    footer {
+      text-align: center;
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <span class="badge">Local Simulation & ML Demo</span>
+      <h1>Polyamorphous Phase Identification in Metallic Glasses</h1>
+      <p class="subtitle">
+        Combining atomistic molecular dynamics post-processing with material-agnostic gradient-boosted classification to identify and map polyamorphous phase boundaries in Cu-Zr alloys at the atomic scale.
+      </p>
+    </header>
+
+    <!-- Key Performance Metrics -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Model Classifier</div>
+        <div class="stat-value" style="font-size:1.4rem; padding-top:4px;">HistGB</div>
+        <div class="stat-sub">18 Normalized Descriptors</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Spatial Holdout Accuracy</div>
+        <div class="stat-value">74.59%</div>
+        <div class="stat-sub">Zero coordinate leakage</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Cu64Zr36 Phase F1</div>
+        <div class="stat-value" style="color:var(--phase-c);">0.9703</div>
+        <div class="stat-sub">Sharp structural transition</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">CV Macro Avg F1</div>
+        <div class="stat-value">0.7309</div>
+        <div class="stat-sub">5-fold Stratified CV</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Target Sample Size</div>
+        <div class="stat-value">36,828</div>
+        <div class="stat-sub">183 Å × 60 Å × 60 Å domain</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+      <button class="tab-btn active" onclick="showTab('spatial')">📍 Spatial Phase Mapping</button>
+      <button class="tab-btn" onclick="showTab('stress')">⚡ Stress & Pressure Fields</button>
+      <button class="tab-btn" onclick="showTab('evaluation')">📊 Model Evaluation & Confusion Matrix</button>
+      <button class="tab-btn" onclick="showTab('descriptors')">🔬 Structural Descriptors & SHAP</button>
+      <button class="tab-btn" onclick="showTab('rdf')">📈 RDF Peak Analysis</button>
+      <button class="tab-btn" onclick="showTab('artifacts')">💾 Data & Model Artifacts</button>
+    </div>
+
+    <!-- Tab 1: Spatial Phase Mapping -->
+    <div id="tab-spatial" class="tab-panel active">
+      <div class="card">
+        <div class="card-title">Polyamorphous Domain Phase Identification & Density Profile</div>
+        <div class="card-desc">
+          Spatial distribution of predicted amorphous phases across the 183 Å simulation domain. Notice the sharp phase separation of Cu64Zr36 on the right and the continuous compositional gradient between Cu50Zr50 and Cu46Zr54 on the left/center.
+        </div>
+        <div class="plot-container">
+          <img src="assets/phase_spatial_distribution.png" alt="Spatial Phase Distribution">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Target Structure Phase Fractions Across Confidence Thresholds</div>
+        <div class="card-desc">
+          Quantification of phase occupancy as a function of classifier confidence cutoff (0.50 to 0.90).
+        </div>
+        <div class="plot-container">
+          <img src="assets/phase_composition_fractions.png" alt="Phase Fractions vs Thresholds">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Stress & Pressure Fields -->
+    <div id="tab-stress" class="tab-panel">
+      <div class="card">
+        <div class="card-title">Local Stress Tensor & Pressure Contours</div>
+        <div class="card-desc">
+          Temporally-averaged Von Mises shear stress and Hydrostatic pressure distributions extracted from atomistic virial stresses. These local mechanical features serve as primary predictors for distinguishing distinct amorphous states.
+        </div>
+        <div class="plot-container">
+          <img src="assets/stress_contours.png" alt="Stress Contours">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Model Evaluation -->
+    <div id="tab-evaluation" class="tab-panel">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Spatial Holdout Confusion Matrix</div>
+          <div class="card-desc">
+            Evaluated on spatially held-out half-domains with a 3.5 Å exclusion zone at boundaries to strictly prevent spatial correlation leakage.
+          </div>
+          <div class="plot-container">
+            <img src="assets/confusion_matrix.png" alt="Confusion Matrix">
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Classification Performance Breakdown</div>
+          <div class="card-desc">Detailed metrics across individual amorphous phase classes:</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Phase Class</th>
+                <th>Composition</th>
+                <th>F1 Score</th>
+                <th>Target Atoms (0.50 Conf)</th>
+                <th>Transition Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="pill pill-phase-a">Phase 0</span></td>
+                <td>Cu50Zr50</td>
+                <td><strong>0.6033</strong></td>
+                <td>11,799 (32.0%)</td>
+                <td>Continuous Gradient</td>
+              </tr>
+              <tr>
+                <td><span class="pill pill-phase-b">Phase 1</span></td>
+                <td>Cu46Zr54</td>
+                <td><strong>0.6266</strong></td>
+                <td>9,113 (24.7%)</td>
+                <td>Continuous Gradient</td>
+              </tr>
+              <tr>
+                <td><span class="pill pill-phase-c">Phase 2</span></td>
+                <td>Cu64Zr36</td>
+                <td><strong style="color:var(--success);">0.9703</strong></td>
+                <td>13,654 (37.1%)</td>
+                <td>Sharp Structural Boundary</td>
+              </tr>
+              <tr>
+                <td><span class="pill pill-uncertain">Uncertain</span></td>
+                <td>Ambiguous / Interface</td>
+                <td>-</td>
+                <td>2,262 (6.1%)</td>
+                <td>Interfacial Atoms</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="margin-top: 24px; padding: 16px; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px;">
+            <strong style="color:var(--accent);">Key Physical Insight:</strong>
+            <p style="font-size: 0.9rem; margin-top: 6px; color: var(--text-muted);">
+              The Phase A (Cu50Zr50) vs Phase B (Cu46Zr54) interface represents a smooth, continuous compositional gradient over ~40 Å (R²=0.938), resulting in partial label ambiguity. In contrast, Phase C (Cu64Zr36) undergoes a sharp structural transition over 12 Å, allowing near-perfect classification (F1 = 0.97).
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Structural Descriptors -->
+    <div id="tab-descriptors" class="tab-panel">
+      <div class="card">
+        <div class="card-title">Permutation Feature Importance (Structural & Thermodynamic Descriptors)</div>
+        <div class="card-desc">
+          Drop in model accuracy upon feature shuffling on spatial test set. Local thermodynamic variables (enthalpy, excess energy, pressure) combined with geometrical descriptors (Voronoi volume, CN, Steinhardt Q4/Q6) constitute the optimal 18-feature whitelist.
+        </div>
+        <div class="plot-container">
+          <img src="assets/feature_importance.png" alt="Feature Importance">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 5: RDF Peak Analysis -->
+    <div id="tab-rdf" class="tab-panel">
+      <div class="card">
+        <div class="card-title">Radial Distribution Function (RDF) & Crystallographic Ratio Validation</div>
+        <div class="card-desc">
+          Savitzky–Golay smoothed RDF g(r) for sample atom ID 35. Peak detection identifies the primary neighbor distance R1 (2.828 Å) and validates higher-order coordination peaks against crystallographic packing ratios (√3, √4, √7, √12) alongside double Gaussian fitting.
+        </div>
+        <div class="plot-container">
+          <img src="assets/sample_peak_polyamorphous.png" alt="Sample Atom RDF Peak Analysis">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 6: Artifacts & Downloads -->
+    <div id="tab-artifacts" class="tab-panel">
+      <div class="card">
+        <div class="card-title">Generated Data Artifacts & Export Files</div>
+        <div class="card-desc">
+          Access all pipeline outputs generated during this simulation & ML inference session:
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Artifact Name</th>
+              <th>Format</th>
+              <th>Description</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>predictions.csv</strong></td>
+              <td>CSV (~9.8 MB)</td>
+              <td>Full per-atom dataset with coordinates, whitelisted features, predictions, and confidence scores</td>
+              <td><a href="assets/predictions.csv" class="btn btn-outline" download>Download CSV</a></td>
+            </tr>
+            <tr>
+              <td><strong>predicted_phases.xyz</strong></td>
+              <td>Extended XYZ</td>
+              <td>OVITO-ready 3D coordinates tagged with atom species, predicted phase index, and confidence</td>
+              <td><a href="assets/predicted_phases.xyz" class="btn btn-outline" download>Download XYZ</a></td>
+            </tr>
+            <tr>
+              <td><strong>model.pkl</strong></td>
+              <td>Pickle / Joblib</td>
+              <td>Serialized HistGradientBoostingClassifier model with embedded training metadata</td>
+              <td><a href="assets/model.pkl" class="btn btn-outline" download>Download Model</a></td>
+            </tr>
+            <tr>
+              <td><strong>validation_summary.json</strong></td>
+              <td>JSON</td>
+              <td>Rigorous benchmark validation metrics and confusion matrix results</td>
+              <td><a href="assets/validation_summary.json" class="btn btn-outline" download>View JSON</a></td>
+            </tr>
+            <tr>
+              <td><strong>phase_mapping.csv</strong></td>
+              <td>CSV</td>
+              <td>Index to phase label mapping table (0: Cu50Zr50, 1: Cu46Zr54, 2: Cu64Zr36)</td>
+              <td><a href="assets/phase_mapping.csv" class="btn btn-outline" download>View Mapping</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer>
+      <p>Amorphous Phase ML Framework • Powered by HistGradientBoosting & Atomistic Trajectory Post-Processing</p>
+    </footer>
+  </div>
+
+  <script>
+    function showTab(tabId) {
+      document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      
+      const targetPanel = document.getElementById('tab-' + tabId);
+      if (targetPanel) {
+        targetPanel.classList.add('active');
+      }
+      
+      event.currentTarget.classList.add('active');
+    }
+  </script>
+</body>
+</html>
+
