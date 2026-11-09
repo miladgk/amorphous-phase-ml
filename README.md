@@ -55,6 +55,27 @@ flowchart LR
 
 ---
 
+## Phase Distinction & Physical Analysis 🔬
+
+The classification performance reveals critical physical insights regarding the atomic structure of polyamorphous metallic glasses:
+
+### 1. Sharp Structural Transition: Cu₆₄Zr₃₆ vs. Cu₅₀Zr₅₀ / Cu₄₆Zr₅₄ (High Discriminability, F1 ≈ 0.97)
+- **Physical Mechanism:** The $\text{Cu}_{64}\text{Zr}_{36}$ phase boundary represents a genuine, sharp structural transition occurring across a narrow interface ($\sim 12\text{ \AA}$) with a substantial $+14.4\%$ shift in Cu fraction.
+- **Model Discriminability:** Strong contrasts in atomic Voronoi volume, coordination numbers, and virial shear stress (von Mises) allow the HistGradientBoosting model to separate $\text{Cu}_{64}\text{Zr}_{36}$ with $>97\%$ F1-score and negligible confusion with other phases.
+
+### 2. Continuous Compositional Gradient: Cu₅₀Zr₅₀ vs. Cu₄₆Zr₅₄ (Inherent Ambiguity, F1 ≈ 0.60–0.63)
+- **Physical Mechanism:** The boundary between $\text{Cu}_{50}\text{Zr}_{50}$ and $\text{Cu}_{46}\text{Zr}_{54}$ is not a discrete structural phase boundary, but a smooth, continuous compositional gradient extending over $\sim 40\text{ \AA}$ (with only a $4\%$ nominal composition difference).
+- **Why Discrete Classification Has High Confusion:** At the atomic scale, coordination polyhedra, Voronoi metrics, and short-range order distributions strongly overlap between these two compositions. Forcing hard 3-class discrete labels on this gradient region leads to mutual confusion ($\sim 36\%\text{–}37\%$ overlap between the two classes).
+
+### 3. Architectural Solutions Implemented
+To address this physical reality without forcing artificial discrete boundaries, the framework incorporates four complementary solutions:
+- **Local Composition Regression:** Directly predicting the continuous Cu fraction rather than hard discrete classes ($R^2 = 0.938$, $\text{MAE} = 0.024$).
+- **Spatial Majority Filtering:** Voronoi neighbor majority voting (`smooth_labels`) removes interfacial salt-and-pepper noise and aggregates coherent domains.
+- **Confidence Cutoffs & Uncertain State:** Atoms with prediction confidence below threshold ($\text{prob} < 0.60\text{–}0.70$) are labeled as *Uncertain / Interface Gradient* rather than forced into misclassification.
+- **2-Stage Hybrid Architecture:** Decouples the sharp binary classification of $\text{Cu}_{64}\text{Zr}_{36}$ (Stage 1, $>98\%$ accuracy) from gradient characterization within the remaining amorphous matrix (Stage 2).
+
+---
+
 ## Repository Structure 📂
 
 ```
