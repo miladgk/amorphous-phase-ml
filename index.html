@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Amorphous Phase ML — Interactive Simulation & Analysis Dashboard</title>
+  <title>Amorphous Phase ML · Interactive Simulation & Analysis Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
   <style>
     :root {
       --bg: #0f172a;
@@ -404,6 +405,13 @@
               </tr>
             </tbody>
           </table>
+
+          <div style="margin-top: 24px; padding: 18px; background: rgba(192, 132, 252, 0.06); border: 1px solid rgba(192, 132, 252, 0.25); border-radius: 8px;">
+            <strong style="color:var(--phase-b);">Why Cu50Zr50 and Cu46Zr54 are difficult to separate</strong>
+            <p style="font-size: 0.9rem; margin-top: 8px; color: var(--text-muted);">
+              This confusion is primarily physical, not a model defect. Their nominal composition differs by only 4%, and the interface is a smooth compositional gradient extending over ~40 Å rather than a discrete structural boundary. As a result, local coordination polyhedra, Voronoi descriptors, and short-range-order distributions overlap strongly, so atoms in the gradient do not have a unique hard class label. The lower F1 scores therefore reflect intrinsic label ambiguity; continuous Cu-fraction regression (R² = 0.938), spatial smoothing, and an uncertain/interface state are more appropriate for this region.
+            </p>
+          </div>
 
           <div style="margin-top: 24px; padding: 16px; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px;">
             <strong style="color:var(--accent);">Key Physical Insight:</strong>
