@@ -227,6 +227,30 @@
       font-size: 0.75rem;
       font-weight: 600;
     }
+    @media (max-width: 700px) {
+      body { padding: 14px; }
+      header { padding: 22px 18px; border-radius: 12px; }
+      h1 { font-size: 1.65rem; line-height: 1.15; }
+      .subtitle { font-size: .92rem; }
+      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .stat-card { padding: 14px; }
+      .stat-value { font-size: 1.45rem; }
+      .nav-tabs { gap: 7px; margin-bottom: 16px; }
+      .tab-btn { padding: 8px 12px; font-size: .8rem; }
+      .card { padding: 16px; border-radius: 11px; }
+      .card-title { font-size: 1.05rem; }
+      .card-desc { font-size: .82rem; }
+      .grid-2 { grid-template-columns: 1fr; gap: 14px; }
+      .plot-container { padding: 8px; }
+      table { display: block; overflow-x: auto; white-space: nowrap; font-size: .78rem; }
+      th, td { padding: 9px 10px; }
+      .btn { min-height: 40px; }
+    }
+    @media (max-width: 420px) {
+      .stats-grid { grid-template-columns: 1fr; }
+      .badge { font-size: .65rem; }
+      .nav-tabs { margin-right: -4px; }
+    }
     .pill-phase-a { background: rgba(56, 189, 248, 0.2); color: var(--phase-a); }
     .pill-phase-b { background: rgba(192, 132, 252, 0.2); color: var(--phase-b); }
     .pill-phase-c { background: rgba(251, 146, 60, 0.2); color: var(--phase-c); }
