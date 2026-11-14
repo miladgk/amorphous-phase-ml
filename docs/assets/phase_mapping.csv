@@ -1,4 +1,5 @@
-phase_index,phase_name
-0,Cu50Zr50
-1,Cu46Zr54
-2,Cu64Zr36
+phase_index,phase_name,f1_score,target_atoms_conf_050,atomic_fraction_pct,transition_type,interface_width_angstrom
+0,Cu50Zr50,0.6033,11799,32.04,Continuous Gradient,40.0
+1,Cu46Zr54,0.6266,9113,24.74,Continuous Gradient,40.0
+2,Cu64Zr36,0.9703,13654,37.08,Sharp Structural Boundary,12.0
+-1,Uncertain_Interface,,2262,6.14,Interfacial Atoms,

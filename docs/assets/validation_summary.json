@@ -1,37 +1,95 @@
 {
+    "model_metadata": {
+        "classifier": "HistGradientBoostingClassifier",
+        "n_features": 18,
+        "domain_dimensions_angstrom": [
+            183.0,
+            60.0,
+            60.0
+        ],
+        "total_domain_atoms": 36828,
+        "spatial_holdout_test_atoms": 16233,
+        "exclusion_zone_angstrom": 3.5
+    },
     "spatial_holdout_accuracy": {
-        "mean": 0.854,
-        "std": 0.012
+        "mean": 0.7459,
+        "cv_macro_avg_f1": 0.7309
     },
     "confusion_matrix": [
         [
-            100,
-            5,
-            2
+            3102,
+            1869,
+            161
         ],
         [
-            3,
-            90,
-            7
+            1901,
+            3201,
+            35
         ],
         [
-            1,
-            4,
-            110
+            149,
+            10,
+            5805
         ]
     ],
+    "per_class_metrics": {
+        "Phase_0_Cu50Zr50": {
+            "precision": 0.6021,
+            "recall": 0.6044,
+            "f1_score": 0.6033,
+            "test_support": 5132,
+            "full_domain_atoms_conf_050": 11799,
+            "full_domain_fraction_conf_050": 0.3204,
+            "transition_type": "Continuous Gradient (~40 A)"
+        },
+        "Phase_1_Cu46Zr54": {
+            "precision": 0.6301,
+            "recall": 0.6231,
+            "f1_score": 0.6266,
+            "test_support": 5137,
+            "full_domain_atoms_conf_050": 9113,
+            "full_domain_fraction_conf_050": 0.2474,
+            "transition_type": "Continuous Gradient (~40 A)"
+        },
+        "Phase_2_Cu64Zr36": {
+            "precision": 0.9673,
+            "recall": 0.9733,
+            "f1_score": 0.9703,
+            "test_support": 5964,
+            "full_domain_atoms_conf_050": 13654,
+            "full_domain_fraction_conf_050": 0.3708,
+            "transition_type": "Sharp Structural Boundary (12 A)"
+        },
+        "Uncertain_Interface": {
+            "full_domain_atoms_conf_050": 2262,
+            "full_domain_fraction_conf_050": 0.0614,
+            "transition_type": "Interfacial Atoms"
+        }
+    },
     "per_class_f1": {
-        "Phase_A": 0.94,
-        "Phase_B": 0.91,
-        "Phase_C": 0.95
+        "Phase_A": 0.6033,
+        "Phase_B": 0.6266,
+        "Phase_C": 0.9703
     },
     "regression": {
-        "R2": 0.88,
-        "MAE": 0.15
+        "R2": 0.938,
+        "description": "Continuous Cu-fraction regression across the ~40 A Cu50Zr50-Cu46Zr54 gradient"
     },
     "interface_width_comparison": {
-        "A_B_gradient": 1.2,
-        "A_C_sharp": 0.5,
-        "B_C_periodic": 0.8
+        "Cu50Zr50_Cu46Zr54_gradient_angstrom": 40.0,
+        "Cu64Zr36_sharp_transition_angstrom": 12.0,
+        "spatial_holdout_exclusion_zone_angstrom": 3.5
+    },
+    "top_permutation_feature_importance": {
+        "local_enthalpy_temporal": 0.2450,
+        "excess_energy_temporal": 0.2158,
+        "pe_volume_residual": 0.2150,
+        "voronoi_volume_temporal": 0.1186,
+        "hydrostatic_pressure_temporal": 0.0456,
+        "R1_SG": 0.0363,
+        "deviatoric_norm_temporal": 0.0288,
+        "CN_temporal": 0.0055,
+        "gaussian_peak3_center": 0.0053,
+        "neighbor_1": 0.0032
     }
 }
