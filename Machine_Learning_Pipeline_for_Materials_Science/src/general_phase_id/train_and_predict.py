@@ -19,6 +19,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.inspection import permutation_importance
+from scipy.spatial import KDTree
 import freud
 
 sys.path.insert(0, 'Machine_Learning_Pipeline_for_Materials_Science/src')
@@ -329,6 +330,105 @@ def train_model(
 # Part 3: Inference on target structure
 # =============================================================================
 
+def apply_spatial_consensus(
+    preds: np.ndarray,
+    probs: np.ndarray,
+    positions: np.ndarray,
+    box_size=None,
+    cutoff: float = 3.6,
+    weight: float = 0.35,
+    verbose: bool = True
+) -> tuple:
+    """
+    Apply Voronoi/nearest-neighbor spatial consensus smoothing to target predictions.
+    
+    In disordered alloys, single-atom thermal fluctuations can perturb local
+    coordination features across the diffuse interface. This graph consensus filter
+    refines atom-level class probabilities by Bayesian blending with the 1st-shell 
+    neighbor consensus:
+        P_smoothed(i) = (1 - weight) * P(i) + weight * Mean_neighbors(P(j))
+    
+    Parameters
+    ----------
+    preds : np.ndarray
+        Array of predicted class indices (N,).
+    probs : np.ndarray
+        Array of predicted class probabilities (N, C).
+    positions : np.ndarray
+        Array of atom coordinates (N, 3).
+    box_size : array-like, optional
+        Simulation box dimensions [Lx, Ly, Lz] for periodic boundary conditions.
+    cutoff : float, default 3.6 Å
+        First-coordination shell cutoff (typical for Cu-Zr metallic glasses).
+    weight : float, default 0.35
+        Consensus blending weight (0.0 = no smoothing, 1.0 = neighbor average only).
+    verbose : bool
+        Whether to print summary diagnostics.
+        
+    Returns
+    -------
+    (smoothed_preds, smoothed_probs, smoothed_confidence)
+    """
+    n_atoms, n_classes = probs.shape
+    if n_atoms <= 1 or weight <= 0.0:
+        return preds, probs, np.max(probs, axis=1)
+    
+    try:
+        box_arr = np.asarray(box_size, dtype=float) if box_size is not None else None
+        tree = KDTree(positions, boxsize=box_arr)
+        pairs = tree.query_pairs(r=cutoff, output_type='ndarray')
+        
+        if len(pairs) == 0:
+            return preds, probs, np.max(probs, axis=1)
+            
+        p0, p1 = pairs[:, 0], pairs[:, 1]
+        neighbor_sum = np.zeros_like(probs)
+        neighbor_count = np.zeros(n_atoms, dtype=float)
+        
+        np.add.at(neighbor_sum, p0, probs[p1])
+        np.add.at(neighbor_sum, p1, probs[p0])
+        np.add.at(neighbor_count, p0, 1.0)
+        np.add.at(neighbor_count, p1, 1.0)
+        
+        has_neighbors = neighbor_count > 0
+        neighbor_mean = probs.copy()
+        neighbor_mean[has_neighbors] = neighbor_sum[has_neighbors] / neighbor_count[has_neighbors, np.newaxis]
+        
+        smoothed_probs = (1.0 - weight) * probs + weight * neighbor_mean
+        row_sums = smoothed_probs.sum(axis=1, keepdims=True)
+        smoothed_probs = np.where(row_sums > 0, smoothed_probs / row_sums, smoothed_probs)
+        
+        smoothed_preds = np.argmax(smoothed_probs, axis=1)
+        smoothed_conf = np.max(smoothed_probs, axis=1)
+        
+        n_flipped = int(np.sum(smoothed_preds != preds))
+        if verbose:
+            print(f'  [Spatial Consensus] Refined {n_flipped}/{n_atoms} boundary atoms '
+                  f'({n_flipped/n_atoms*100:.2f}%) using 1st-shell consensus (cutoff={cutoff} A, weight={weight}).')
+                  
+        return smoothed_preds, smoothed_probs, smoothed_conf
+    except Exception as e:
+        if verbose:
+            print(f'  [Spatial Consensus] Warning: consensus smoothing failed: {e}. Keeping raw predictions.')
+        return preds, probs, np.max(probs, axis=1)
+
+
+def read_dump_box(dump_path):
+    """Return (lo, length) arrays from a LAMMPS dump's BOX BOUNDS block, or (None, None)."""
+    if not dump_path or not os.path.exists(dump_path):
+        return None, None
+    with open(dump_path) as f:
+        for i, line in enumerate(f):
+            if line.startswith('ITEM: BOX BOUNDS'):
+                rows = [next(f).split() for _ in range(3)]
+                lo = np.array([float(r[0]) for r in rows])
+                hi = np.array([float(r[1]) for r in rows])
+                return lo, hi - lo
+            if i > 20:
+                break
+    return None, None
+
+
 def predict_target(
     model,
     feature_cols: list,
@@ -372,6 +472,24 @@ def predict_target(
     preds = model.predict(X_target)
     probs = model.predict_proba(X_target)
     confidence = np.max(probs, axis=1)
+    
+    # Optional Voronoi / 1st-neighbor spatial consensus smoothing
+    consensus_cfg = config.get('inference', {}).get('spatial_consensus', {})
+    if consensus_cfg and consensus_cfg.get('enabled', False):
+        if all(c in raw.columns for c in ['x', 'y', 'z']):
+            pos = raw[['x', 'y', 'z']].values
+            cutoff = float(consensus_cfg.get('cutoff', 3.6))
+            weight = float(consensus_cfg.get('weight', 0.35))
+            # Periodic box must come from the simulation cell, not from the
+            # coordinate range. Without a dump the filter runs non-periodic.
+            box_lo, box_size = read_dump_box(config['target_structure'].get('dump_path'))
+            if box_size is not None:
+                pos = np.mod(pos - box_lo, box_size)  # KDTree needs [0, L)
+            elif verbose:
+                print('WARNING: no dump box found; spatial consensus runs NON-periodic.')
+            preds, probs, confidence = apply_spatial_consensus(
+                preds, probs, pos, box_size=box_size, cutoff=cutoff, weight=weight, verbose=verbose
+            )
     
     # OOD warning: check if target elements overlap with reference elements
     # This is a soft check -- we can detect if type labels are present

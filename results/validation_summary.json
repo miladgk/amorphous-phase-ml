@@ -1,37 +1,78 @@
 {
-    "spatial_holdout_accuracy": {
-        "mean": 0.854,
-        "std": 0.012
-    },
-    "confusion_matrix": [
-        [
-            100,
-            5,
-            2
-        ],
-        [
-            3,
-            90,
-            7
-        ],
-        [
-            1,
-            4,
-            110
-        ]
+  "model_metadata": {
+    "classifier": "HistGradientBoostingClassifier",
+    "n_features": 17,
+    "feature_whitelist": [
+      "voronoi_volume_temporal",
+      "CN_temporal",
+      "R1_SG",
+      "gaussian_peak2_center",
+      "gaussian_peak3_center",
+      "q4",
+      "q6",
+      "local_energy_fluctuation_temporal",
+      "pe_atom_std_temporal",
+      "hydrostatic_pressure_temporal",
+      "von_mises_stress_temporal",
+      "deviatoric_norm_temporal",
+      "stress_anisotropy_temporal",
+      "local_enthalpy_temporal",
+      "excess_energy_temporal",
+      "neighbor_1",
+      "neighbor_2"
     ],
-    "per_class_f1": {
-        "Phase_A": 0.94,
-        "Phase_B": 0.91,
-        "Phase_C": 0.95
+    "domain_dimensions_angstrom": [
+      181.16,
+      58.96,
+      58.96
+    ],
+    "total_domain_atoms": 36828,
+    "spatial_holdout_test_atoms": 16227,
+    "exclusion_zone_angstrom": 3.5,
+    "note": "pe_volume_residual is in the config but the current pipeline does not produce it; the model uses 17 features. Test set has 16,227 atoms: 6 Cu64Zr36 test rows with NaN features are dropped (accuracy 0.6781 = 11,003/16,227)."
+  },
+  "spatial_holdout_accuracy": {
+    "mean": 0.6781,
+    "cv_macro_avg_f1": 0.6697
+  },
+  "confusion_matrix": [
+    [
+      2550,
+      2084,
+      498
+    ],
+    [
+      1933,
+      3037,
+      167
+    ],
+    [
+      500,
+      42,
+      5416
+    ]
+  ],
+  "per_class_metrics": {
+    "Phase_0_Cu50Zr50": {
+      "precision": 0.5117,
+      "recall": 0.4969,
+      "f1_score": 0.5042
     },
-    "regression": {
-        "R2": 0.88,
-        "MAE": 0.15
+    "Phase_1_Cu46Zr54": {
+      "precision": 0.5882,
+      "recall": 0.5912,
+      "f1_score": 0.5897
     },
-    "interface_width_comparison": {
-        "A_B_gradient": 1.2,
-        "A_C_sharp": 0.5,
-        "B_C_periodic": 0.8
+    "Phase_2_Cu64Zr36": {
+      "precision": 0.8906,
+      "recall": 0.909,
+      "f1_score": 0.8997
     }
+  },
+  "per_class_f1": {
+    "Phase_A": 0.5042,
+    "Phase_B": 0.5897,
+    "Phase_C": 0.8997
+  },
+  "source": "train_and_predict.py run on recomputed features (temporal_first_spatial, 9-frame target, 11-frame references)"
 }

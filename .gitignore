@@ -48,3 +48,13 @@ general_phase_id_output/predicted_phases.xyz
 # Log files
 *.log
 docs/PROJECT_BRIEF.md
+
+# Temporary review reports & utility scripts
+index_html_review_report.md
+scripts/update_html_authentic_data.py
+scripts/compute_9frame_temporal_averages.py
+scripts/compute_complete_9frame_temporal_averages.py
+scripts/sync_dashboard_to_html.py
+
+# Large recomputed feature tables (regenerate: see outputs/README_recomputed.md)
+Atomic_Simulation_Post-Processing_Pipeline/outputs/features_*_recomputed.csv

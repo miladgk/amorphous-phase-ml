@@ -1,4 +1,5 @@
 feature_whitelist:
+# Baseline Topological & Structural (9 features)
 - R1_SG
 - voronoi_volume_temporal
 - CN_temporal
@@ -8,6 +9,7 @@ feature_whitelist:
 - gaussian_peak3_center
 - neighbor_1
 - neighbor_2
+# Thermodynamic & Virial Stress (9 features)
 - excess_energy_temporal
 - local_energy_fluctuation_temporal
 - hydrostatic_pressure_temporal
@@ -16,7 +18,6 @@ feature_whitelist:
 - stress_anisotropy_temporal
 - local_enthalpy_temporal
 - pe_atom_std_temporal
-- pe_volume_residual
 inference:
   confidence_threshold: 0.5
   multiple_thresholds:
@@ -25,6 +26,10 @@ inference:
   - 0.7
   - 0.8
   - 0.9
+  spatial_consensus:
+    enabled: true
+    cutoff: 3.6
+    weight: 0.35
 model:
   early_stopping: true
   learning_rate: 0.05
@@ -37,14 +42,14 @@ model:
   validation_fraction: 0.1
 output_dir: general_phase_id_output
 reference_phases:
-- csv_path: Atomic_Simulation_Post-Processing_Pipeline/outputs/features_5050_csro_fixed.csv
+- csv_path: Atomic_Simulation_Post-Processing_Pipeline/outputs/features_5050_recomputed.csv
   name: Cu50Zr50
-- csv_path: Atomic_Simulation_Post-Processing_Pipeline/outputs/features_4654_csro_fixed.csv
+- csv_path: Atomic_Simulation_Post-Processing_Pipeline/outputs/features_4654_recomputed.csv
   name: Cu46Zr54
-- csv_path: Atomic_Simulation_Post-Processing_Pipeline/outputs/features_6436_csro_fixed.csv
+- csv_path: Atomic_Simulation_Post-Processing_Pipeline/outputs/features_6436_recomputed.csv
   name: Cu64Zr36
 target_structure:
-  csv_path: Atomic_Simulation_Post-Processing_Pipeline/outputs/features_polyamorphous_csro_fixed.csv
+  csv_path: Atomic_Simulation_Post-Processing_Pipeline/outputs/features_polyamorphous_recomputed.csv
   dump_path: Machine_Learning_Pipeline_for_Materials_Science/data/polyamorphous/anneal_combined_0.lammpstrj
 validation:
   boundary_cutoff: 3.5

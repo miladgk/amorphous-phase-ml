@@ -691,6 +691,9 @@ def plot_peak_results(
     plt.xticks(np.arange(0, params["R_MAX"] + 1, 1))
     plt.tight_layout()
     try:
+        out_dir = os.path.dirname(params.get("PLOT_OUTPUT_FILE", ""))
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
         plt.savefig(params["PLOT_OUTPUT_FILE"])
         logging.info(f"Sample plot saved to {params['PLOT_OUTPUT_FILE']}")
     except Exception as plot_err:

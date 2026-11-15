@@ -49,7 +49,7 @@ plt.rcParams['grid.alpha'] = 0.6
 plt.rcParams['legend.facecolor'] = '#0f172a'
 plt.rcParams['legend.edgecolor'] = '#334155'
 
-target_dirs = ['docs/assets', 'general_phase_id_output/plots']
+target_dirs = ['docs/assets', 'assets', 'general_phase_id_output/plots']
 for d in target_dirs:
     os.makedirs(d, exist_ok=True)
 
@@ -114,24 +114,24 @@ print("Generating Fig 2: stress_contours.png ...")
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 9))
 
 # Von Mises Stress
-sc1 = ax1.scatter(df['x'], df['y'], c=df['von_mises_stress_temporal'] / 1e3,
+sc1 = ax1.scatter(df['x'], df['y'], c=df['von_mises_stress_temporal'] / 10.0,
                   cmap='magma', s=8, alpha=0.85, edgecolors='none')
 cbar1 = plt.colorbar(sc1, ax=ax1, pad=0.015)
-cbar1.set_label('Von Mises Shear Stress (MPa)', fontsize=11, color='#e2e8f0')
+cbar1.set_label('Von Mises Shear Stress (MPa, bar ÷ 10)', fontsize=11, color='#e2e8f0')
 cbar1.ax.yaxis.set_tick_params(color='#e2e8f0')
 plt.setp(plt.getp(cbar1.ax.axes, 'yticklabels'), color='#e2e8f0')
 cbar1.outline.set_edgecolor('#334155')
 
-ax1.set_title('Spatial Stress Field: Local Von Mises Shear Stress Distribution', fontsize=13, fontweight='bold', pad=10)
+ax1.set_title('Spatial Stress Field: Local Per-Atom Virial Shear Stress (9-Frame Averaged)', fontsize=13, fontweight='bold', pad=10)
 ax1.set_xlabel('X (Å)', fontsize=11)
 ax1.set_ylabel('Y (Å)', fontsize=11)
 ax1.grid(True, color='#1e293b', alpha=0.5, linestyle=':')
 
 # Hydrostatic Pressure
-sc2 = ax2.scatter(df['x'], df['y'], c=df['hydrostatic_pressure_temporal'] / 1e3,
+sc2 = ax2.scatter(df['x'], df['y'], c=df['hydrostatic_pressure_temporal'] / 10.0,
                   cmap='coolwarm', s=8, alpha=0.85, edgecolors='none')
 cbar2 = plt.colorbar(sc2, ax=ax2, pad=0.015)
-cbar2.set_label('Hydrostatic Pressure (MPa)', fontsize=11, color='#e2e8f0')
+cbar2.set_label('Hydrostatic Pressure (MPa, bar ÷ 10)', fontsize=11, color='#e2e8f0')
 cbar2.ax.yaxis.set_tick_params(color='#e2e8f0')
 plt.setp(plt.getp(cbar2.ax.axes, 'yticklabels'), color='#e2e8f0')
 cbar2.outline.set_edgecolor('#334155')

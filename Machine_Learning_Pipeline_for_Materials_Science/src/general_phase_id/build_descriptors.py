@@ -133,6 +133,9 @@ def _is_stress(col: str) -> bool:
 
 
 def _is_already_dimensionless(col: str) -> bool:
+    # Species-blind SOAP power-spectrum components (rotation-invariant, unit-free)
+    if col.startswith('soap_'):
+        return True
     """Check if a column is already dimensionless and comparable across systems."""
     # Steinhardt order parameters and derived
     if col in ['q4', 'q6', 'w4', 'w6', 'q4_avg', 'q6_avg',
@@ -153,7 +156,12 @@ def _is_already_dimensionless(col: str) -> bool:
                'csro_unlike_std_temporal',
                'mean_neighbor_pentagon_fraction_temporal',
                'std_neighbor_pentagon_fraction_temporal',
+               'mean_2nd_neighbor_pentagon_fraction_temporal',
+               'mean_3rd_neighbor_pentagon_fraction_temporal',
+               'cu_fraction_2nd_shell_temporal', 'zr_fraction_2nd_shell_temporal',
+               'cu_fraction_3rd_shell_temporal', 'zr_fraction_3rd_shell_temporal',
                'mean_neighbor_CN_temporal',
+               'mean_2nd_neighbor_CN_temporal', 'mean_3rd_neighbor_CN_temporal',
                'mean_neighbor_asphericity_temporal']:
         return True
     # s2_entropy — this is an information-theoretic quantity already unit-free.
@@ -291,7 +299,7 @@ def build_general_descriptors(
             excluded_sqrt += 1
             continue
 
-        # Skip MRO depth-1/2/3 features (known leakage from spatial holdout ablation)
+        # Skip MRO depth-1/2/3 features unless explicitly in feature_whitelist
         if col in MRO_DEPTH_123_FEATURES:
             excluded_mro += 1
             continue
@@ -505,7 +513,7 @@ def build_general_descriptors_from_df(
             excluded_sqrt += 1
             continue
 
-        # Skip MRO depth-1/2/3 features (known leakage from spatial holdout ablation)
+        # Skip MRO depth-1/2/3 features unless explicitly in feature_whitelist
         if col in MRO_DEPTH_123_FEATURES:
             excluded_mro += 1
             continue

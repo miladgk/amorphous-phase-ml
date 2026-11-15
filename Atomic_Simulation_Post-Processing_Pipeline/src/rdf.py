@@ -107,13 +107,21 @@ def compute_all_local_rdfs(
         if pairs.size == 0:
             return out
 
-        # Distances between pair endpoints (minimal-image handled by cKDTree)
+        # Distances between pair endpoints with minimum-image convention
         p0 = pairs[:, 0]
         p1 = pairs[:, 1]
-        d = np.linalg.norm(all_positions[p0] - all_positions[p1], axis=1)
+        delta = all_positions[p0] - all_positions[p1]
+        if box_size is not None:
+            box_arr = np.asarray(box_size, dtype=float)
+            delta = delta - np.round(delta / box_arr) * box_arr
+        d = np.linalg.norm(delta, axis=1)
 
         bin_idx = np.searchsorted(bins, d, side='right') - 1
-        bin_idx = np.clip(bin_idx, 0, num_bins - 1)
+        valid_mask = (bin_idx >= 0) & (bin_idx < num_bins)
+
+        p0 = p0[valid_mask]
+        p1 = p1[valid_mask]
+        bin_idx = bin_idx[valid_mask]
 
         # Flattened target indices for bincount: atom_index * num_bins + bin_index
         flat0 = p0 * num_bins + bin_idx
@@ -219,9 +227,13 @@ def compute_local_rdf(
         query_point = all_positions[atom_index] - lower_bounds
         neighbor_indices = kd_tree.query_ball_point(query_point, cutoff)
 
-        # Compute distances to neighbors
+        # Compute distances to neighbors with minimum image convention if boxsize exists
         center = all_positions[atom_index]
-        distances = np.linalg.norm(all_positions[neighbor_indices] - center, axis=1)
+        delta = all_positions[neighbor_indices] - center
+        if getattr(kd_tree, 'boxsize', None) is not None:
+            box_arr = np.asarray(kd_tree.boxsize, dtype=float)
+            delta = delta - np.round(delta / box_arr) * box_arr
+        distances = np.linalg.norm(delta, axis=1)
 
         # Exclude self-distance (possible floating point artifact)
         distances = distances[distances > 1e-8]
