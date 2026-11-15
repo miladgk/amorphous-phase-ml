@@ -1,10 +1,12 @@
 # Amorphous Phase ML
 
-[![CI](https://github.com/MiladGK/ml_rdf/actions/workflows/ci.yml/badge.svg)](https://github.com/MiladGK/ml_rdf/actions/workflows/ci.yml)
+[![CI](https://github.com/miladgk/amorphous-phase-ml/actions/workflows/ci.yml/badge.svg)](https://github.com/miladgk/amorphous-phase-ml/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 
-An end-to-end framework for **polyamorphous phase identification in metallic glasses**, combining atomistic simulation post-processing with machine learning. The pipeline takes raw LAMMPS molecular dynamics trajectories, extracts 18 structural descriptors per atom, and trains gradient-boosted classifiers to identify distinct amorphous phases at the atomic scale.
+An end-to-end framework for **polyamorphous phase identification in Cu–Zr metallic glasses**. It takes LAMMPS molecular dynamics dumps, computes structural descriptors per atom, and trains a gradient-boosted classifier on three reference glasses (Cu₅₀Zr₅₀, Cu₄₆Zr₅₄, Cu₆₄Zr₃₆) to label the atoms of a polyamorphous target box.
+
+Live results and figures: the dashboard is published from `docs/` (GitHub Pages).
 
 ---
 
@@ -13,15 +15,15 @@ An end-to-end framework for **polyamorphous phase identification in metallic gla
 ```mermaid
 flowchart LR
     A["🔬 LAMMPS\nTrajectories"] --> B["⚙️ Post-Processing\nPipeline"]
-    B --> C["📊 18 Structural\nDescriptors"]
+    B --> C["📊 17 Model\nFeatures"]
     C --> D["🤖 ML Pipeline\n(HistGradientBoosting)"]
     D --> E["🎯 Per-Atom\nPhase Labels"]
 
-    subgraph descriptors ["Structural Descriptors"]
+    subgraph descriptors ["Structural Descriptors (used)"]
         direction TB
-        C1["Voronoi: volume, CN,\nneighbor types"]
+        C1["Voronoi: volume, CN,\nneighbour counts"]
         C2["RDF: R1 peak,\nGaussian fits"]
-        C3["Steinhardt: Q4, Q6"]
+        C3["Steinhardt: q4, q6"]
         C4["Stress: hydrostatic,\nvon Mises, deviatoric"]
         C5["Energy: excess, enthalpy,\nPE fluctuation"]
     end
@@ -45,158 +47,124 @@ flowchart LR
 
 ## Key Results
 
+Spatial holdout: atoms with |x − median| < 3.5 Å removed from the target box; 16,227 test atoms.
+
 | Metric | Value |
 |--------|-------|
-| Classifier | HistGradientBoostingClassifier |
-| CV Score (macro F1) | **0.670** (17 features) |
-| Spatial-holdout accuracy | **67.8 %** (16,227 atoms) |
+| Classifier | HistGradientBoostingClassifier, 17 features |
+| CV macro F1 (5-fold, stratified, training split) | **0.670** |
+| Holdout accuracy | **67.8 %** (11,003 / 16,227) |
 | F1 Cu₅₀Zr₅₀ / Cu₄₆Zr₅₄ / Cu₆₄Zr₃₆ | **0.504 / 0.590 / 0.900** |
-| Regressor R² (Cu fraction) | 0.938 from an earlier run; not re-evaluated on current features |
-| Target System | Cu-Zr metallic glasses |
-| Classes | Cu₅₀Zr₅₀ · Cu₄₆Zr₅₄ · Cu₆₄Zr₃₆ |
+| Target box | 36,828 atoms, features averaged over 9 snapshots (dt = 2 fs, about 2 ns apart) |
+| Reference boxes | 11 snapshots each, one simulation box per phase |
+
+Limitation: each reference phase is a single simulation box, so the holdout does not test transfer to independent simulations (see PIPELINE.md §9.9).
 
 ---
 
-## Phase Distinction & Physical Analysis 🔬
+## What the Results Show 🔬
 
-The classification performance reveals critical physical insights regarding the atomic structure of polyamorphous metallic glasses:
+### 1. Cu₆₄Zr₃₆ is separated well (F1 = 0.900, recall 91 %)
+- On the spatial holdout, 5,416 of 5,958 true Cu₆₄Zr₃₆ atoms are classified correctly. The errors go to Cu₅₀Zr₅₀ (500 atoms) and Cu₄₆Zr₅₄ (42 atoms).
+- In the predicted map of the target box, the Cu₆₄Zr₃₆ region begins near x ≈ 120–125 Å and occupies the rest of the box (`docs/assets/phase_spatial_distribution.png`).
 
-### 1. Sharp Structural Transition: Cu₆₄Zr₃₆ vs. Cu₅₀Zr₅₀ / Cu₄₆Zr₅₄ (High Discriminability, F1 ≈ 0.90)
-- **Physical Mechanism:** The $\text{Cu}_{64}\text{Zr}_{36}$ phase boundary represents a genuine, sharp structural transition occurring across a narrow interface ($\sim 12\text{ \AA}$) with a substantial $+14.4\%$ shift in Cu fraction.
-- **Model Discriminability:** Strong contrasts in atomic Voronoi volume, coordination numbers, and virial shear stress (von Mises) allow the HistGradientBoosting model to separate $\text{Cu}_{64}\text{Zr}_{36}$ with F1 ≈ 0.90 (recall 91 %) on the spatial holdout. Most of its errors are with Cu₅₀Zr₅₀ (500 atoms) and Cu₄₆Zr₅₄ (42 atoms).
+### 2. Cu₅₀Zr₅₀ and Cu₄₆Zr₅₄ are not separated well (F1 = 0.504 and 0.590)
+- On the holdout, 40.6 % of true Cu₅₀Zr₅₀ atoms are predicted as Cu₄₆Zr₅₄, and 37.6 % of true Cu₄₆Zr₅₄ atoms are predicted as Cu₅₀Zr₅₀.
+- The two compositions differ by 4 at.% Cu. With these descriptors they overlap strongly, so their F1 values stay low.
+- An exploratory species-blind SOAP descriptor raised these two F1 values, but the result is not adopted because a box-identity confound has not been excluded (`Machine_Learning_Pipeline_for_Materials_Science/experiments/soap_species_blind/RESULT.md`).
 
-### 2. Continuous Compositional Gradient: Cu₅₀Zr₅₀ vs. Cu₄₆Zr₅₄ (Inherent Ambiguity, F1 ≈ 0.50–0.59)
-- **Physical Mechanism:** The boundary between $\text{Cu}_{50}\text{Zr}_{50}$ and $\text{Cu}_{46}\text{Zr}_{54}$ is not a discrete structural phase boundary, but a smooth, continuous compositional gradient extending over $\sim 40\text{ \AA}$ (with only a $4\%$ nominal composition difference).
-- **Why Discrete Classification Has High Confusion:** At the atomic scale, coordination polyhedra, Voronoi metrics, and short-range order distributions strongly overlap between these two compositions. Forcing hard 3-class discrete labels on this gradient region leads to mutual confusion ($\sim 36\%\text{–}37\%$ overlap in the current holdout, see PIPELINE.md §9.9 for why composition shortcuts cannot be ruled out).
-
-### 3. Architectural Solutions Implemented
-To address this physical reality without forcing artificial discrete boundaries, the framework incorporates four complementary solutions:
-- **Local Composition Regression:** Predicting the continuous Cu fraction rather than hard discrete classes ($R^2 = 0.938$, $\text{MAE} = 0.024$ from an earlier run; not re-evaluated on the current features).
-- **Spatial Consensus Smoothing:** Probability averaging over periodic neighbours (`apply_spatial_consensus` in `train_and_predict.py`, cutoff 3.6 Å, weight 0.35, periodic box read from the LAMMPS dump). It reduces isolated noisy predictions.
-- **Confidence Cutoffs & Uncertain State:** Atoms with prediction confidence below threshold ($\text{prob} < 0.60\text{–}0.70$) are labeled as *Uncertain / Interface Gradient* rather than forced into misclassification.
-- **2-Stage Hybrid Architecture (planned, not implemented in the current pipeline):** Would separate the sharp Cu₆₄Zr₃₆ classification from the gradient characterisation within the rest of the matrix..
+### 3. Measures in the pipeline
+- **Spatial consensus smoothing:** periodic neighbour averaging of class probabilities (`apply_spatial_consensus` in `train_and_predict.py`; cutoff 3.6 Å, weight 0.35; periodic box read from the LAMMPS dump).
+- **Confidence cutoffs:** the dashboard reports the fraction of atoms at confidence ≥ 0.50, 0.60, 0.70, 0.80 and 0.90. At 0.50, 15.6 % of atoms remain uncertain.
 
 ---
 
 ## Repository Structure 📂
 
 ```
-project/
+amorphous-phase-ml/
 │
-├── README.md                                          # This file — general overview
-├── PIPELINE.md                                        # Full technical specification
-├── DATA.md                                            # Data regeneration guide
-├── CODE_OF_CONDUCT.md                                 # Community standards
+├── README.md                                          # This file
+├── PIPELINE.md                                        # Technical specification (features, algorithms, parameters)
+├── DATA.md                                            # Data files and how to regenerate them
 ├── LICENSE                                            # MIT License
-├── environment.yml                                    # Conda environment specification
-├── requirements.txt                                   # pip dependencies (alternative)
+├── environment.yml                                    # Conda environment
+├── requirements.txt                                   # pip dependencies
+├── .github/workflows/ci.yml                           # CI: runs the ML unit tests
 │
-├── Atomic_Simulation_Post-Processing_Pipeline/         # Post-processing pipeline
-│   ├── README.md                                      # Detailed docs for post-processing pipeline
+├── docs/                                              # GitHub Pages site (dashboard + figures)
+│   ├── index.html                                     # Interactive dashboard
+│   └── assets/                                        # Validation JSON, dashboard data, figures
+│
+├── Atomic_Simulation_Post-Processing_Pipeline/        # Feature extraction from LAMMPS dumps
+│   ├── README.md
 │   ├── config.yaml                                    # Pipeline configuration
-│   ├── config/freud.ini                               # freud library configuration
-│   ├── input.txt                                      # Input parameters
-│   ├── requirements.txt                               # Python dependencies
-│   ├── src/                                           # Source code
-│   │   ├── pipeline_orchestrator.py                   # Main pipeline entry point
-│   │   ├── pipeline_mpi.py                            # MPI-parallelized pipeline
-│   │   ├── snapshot_processor.py                      # Per-snapshot processing
-│   │   ├── io_module.py                               # LAMMPS dump I/O
-│   │   ├── rdf.py                                     # RDF computation
-│   │   ├── voronoi.py                                 # Voronoi tessellation
-│   │   ├── peak_analysis.py                           # RDF peak detection
-│   │   ├── temporal_averaging.py                      # Temporal averaging
-│   │   ├── spatial_analysis_levels.py                 # Spatial analysis
-│   │   ├── *.py                                       # Feature injection & workflow scripts
-│   │   └── *.sh                                       # Shell workflow runners
-│   ├── files/snapshots_{5050,4654,6436}/             # LAMMPS snapshot data
-│   └── outputs/                                       # Generated outputs (CSVs, plots)
+│   ├── config/freud.ini
+│   ├── src/                                           # pipeline_orchestrator.py, snapshot_processor.py, rdf.py, ...
+│   ├── files/snapshots_{5050,4654,6436}/              # Reference LAMMPS dumps (11 snapshots each)
+│   └── outputs/                                       # Feature tables (see DATA.md)
 │
-├── Machine_Learning_Pipeline_for_Materials_Science/   # ML pipeline
-│   ├── README.md                                      # Detailed docs for ML pipeline
-│   ├── config.yaml                                    # ML pipeline configuration
-│   ├── src/                                           # Source code
-│   │   ├── pipeline.py                                # Main training pipeline
-│   │   ├── models.py                                  # Model construction & tuning
-│   │   ├── data_utils.py                              # Data loading & splitting
-│   │   ├── feature_builder_data_clean.py              # Feature engineering
-│   │   ├── explainability.py                          # Model interpretability
-│   │   ├── analyze_feature_importance.py              # Feature importance analysis
-│   │   ├── apply_model_to_unlabeled.py                # Model deployment
-│   │   └── *.py                                       # Experiment & validation scripts
-│   ├── data/polyamorphous/                            # Polyamorphous dataset
-│   ├── tests/                                         # Unit tests
-│   └── outputs/                                       # Models, plots, SHAP data
+├── Machine_Learning_Pipeline_for_Materials_Science/   # Training and prediction
+│   ├── README.md
+│   ├── src/general_phase_id/                          # train_and_predict.py, build_descriptors.py, ref_config.yaml
+│   ├── src/process_trajectory.py                      # Older trajectory helper (legacy, see its README note)
+│   ├── data/polyamorphous/                            # Target LAMMPS dumps (9 snapshots)
+│   ├── tests/                                         # Unit tests (pytest)
+│   ├── experiments/soap_species_blind/                # Exploratory SOAP result (not adopted)
+│   └── scripts/generate_rigor_artifacts.py
 │
-└── general_phase_id_output/                           # Trained model artifacts
-    ├── model.pkl                                      # HistGB classifier
-    ├── norm_params.pkl                                # Frozen normalization parameters
-    ├── feature_ranges.pkl                             # OOD detection ranges
-    └── predicted_phases.lammpstrj                     # LAMMPS output with predictions
+└── general_phase_id_output/                           # Trained model and predictions
+    ├── model.pkl                                      # Classifier (17 features)
+    ├── config_used.yaml                               # Configuration of the run
+    ├── norm_params.pkl, feature_ranges.pkl
+    ├── permutation_importance.json
+    ├── predictions.csv                                # Per-atom predictions (not tracked; large)
+    ├── predicted_phases.xyz / .lammpstrj              # Visualisation outputs
+    └── plots/                                         # Figures
 ```
 
 ---
 
 ## Installation ⚙️
 
-### Option 1: Conda (Recommended)
+Tested with Python 3.10.
 
 ```bash
-# Install system packages (Linux/WSL)
-sudo apt update && sudo apt install build-essential
-
-# Create and activate the environment
+# Conda (recommended)
 conda env create -f environment.yml
 conda activate materials-sim-ml
-```
 
-### Option 2: pip
-
-```bash
+# or pip
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
----
-
-## Sub-Projects 🚀
-
-### 📦 Atomic Simulation Post-Processing Pipeline
-
-- Parallelized analysis of LAMMPS trajectories with MPI support.
-- Computes RDFs, Voronoi descriptors, bond order parameters (Q4, Q6), bond angle distributions, CSRO, and multi-level MRO features.
-- Performs peak analysis, temporal/spatial averaging, and spatial kernel smoothing.
-- Includes feature injection scripts and workflow automation (shell + Python runners).
-
-*See `Atomic_Simulation_Post-Processing_Pipeline/README.md` for full documentation.*
-
-### 🤖 Machine Learning Pipeline for Materials Science
-
-- Configurable ML pipeline for 2-class and 3-class classification on per-atom data.
-- Supports Random Forest, HistGB, LinearSVC with hyperparameter tuning.
-- Group-aware splitting, explainability (SHAP, permutation importance), and model calibration.
-- Experiment scripts for calibrated, domain-robust, hybrid, and MRO-boosted approaches.
-- Production-ready deployment for applying trained models to new datasets.
-
-*See `Machine_Learning_Pipeline_for_Materials_Science/README.md` for full documentation.*
+The post-processing step needs `freud-analysis` 3.2 and `pyvoro` 1.3.2 (see `environment.yml`).
 
 ---
 
 ## Quick Start
 
-```bash
-# Activate environment
-conda activate materials-sim-ml
+Run all commands from the repository root.
 
-# Run the post-processing pipeline on a dataset
+```bash
+# 1. Feature extraction (per dataset; see Atomic_Simulation_Post-Processing_Pipeline/README.md and DATA.md)
 python Atomic_Simulation_Post-Processing_Pipeline/src/pipeline_orchestrator.py \
     --config Atomic_Simulation_Post-Processing_Pipeline/config.yaml
 
-# Train ML models on processed features
-python Machine_Learning_Pipeline_for_Materials_Science/src/pipeline.py \
-    --config Machine_Learning_Pipeline_for_Materials_Science/config.yaml
+# 2. Train on the reference boxes and predict the target box (17 features)
+python Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/train_and_predict.py \
+    --config Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/ref_config.yaml
+
+# 3. Figures and dashboard data
+python scripts/generate_dark_figures.py
+
+# 4. Tests
+pytest Machine_Learning_Pipeline_for_Materials_Science/tests/ -v
 ```
+
+The feature tables used by step 2 are not in git because of their size. See [DATA.md](DATA.md) for how to regenerate them.
 
 ---
 
@@ -204,8 +172,10 @@ python Machine_Learning_Pipeline_for_Materials_Science/src/pipeline.py \
 
 | Document | Description |
 |----------|-------------|
-| [PIPELINE.md](PIPELINE.md) | Full technical specification — every feature, every algorithm, every parameter |
-| [DATA.md](DATA.md) | Data regeneration guide — how to reproduce CSV files from raw LAMMPS dumps |
+| [PIPELINE.md](PIPELINE.md) | Technical specification: every feature, algorithm and parameter, with the current state at the top |
+| [DATA.md](DATA.md) | Data files, sizes, tracking status and regeneration steps |
+| [Atomic_Simulation_Post-Processing_Pipeline/README.md](Atomic_Simulation_Post-Processing_Pipeline/README.md) | Feature extraction |
+| [Machine_Learning_Pipeline_for_Materials_Science/README.md](Machine_Learning_Pipeline_for_Materials_Science/README.md) | Training and prediction |
 
 ---
 

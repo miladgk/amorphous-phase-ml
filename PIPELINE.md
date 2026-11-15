@@ -85,7 +85,7 @@ Each snapshot is processed independently. The following describes every feature 
       positions, {'r_max': 3.5, 'exclude_ii': True}
   ).toNeighborList()
   ```
-  This cutoff was chosen because it corresponds to the first coordination shell in Cu-Zr metallic glasses. Wang et al. (2026) found 5Å carries more information, but q4/q6 at 3.5Å are what the deployed 17-feature model uses.
+  q4/q6 at 3.5 Å are what the deployed 17-feature model uses.
 - **Temporal aggregation:** Per-atom mean across snapshots (via `grouped_atoms['q4'].mean()` in `temporal_averaging.py`).
 - **Normalization:** Already dimensionless, passed through.
 
@@ -373,7 +373,7 @@ Confirmed by direct regression in an earlier run (R²=0.938, MAE=0.024 on held-o
 After Voronoi smoothing, ~3.6% of right-region atoms are still labeled as Phase A or B. This is real local compositional heterogeneity, not classifier error: these atoms have mean LocalCuFraction=0.48 vs 0.59 for correctly-labeled Phase C atoms. The model correctly predicts their local environment — it's the local composition that genuinely differs from bulk Cu₆₄Zr₃₆.
 
 ### 9.3 q4/q6 at 3.5Å only
-The Steinhardt bond order parameters are computed with `r_max=3.5Å` hardcoded in `snapshot_processor.py`. Wang et al. (2026) found 5Å carries more structural information. Adding q4_5a/q6_5a produced no measurable improvement (ΔR²=+0.0008) for this Cu-Zr system, but this may differ for other chemistries.
+The Steinhardt bond order parameters are computed with `r_max=3.5Å` hardcoded in `snapshot_processor.py`. The 5 Å variants (q4_5a/q6_5a) are present in the CSV but are not in the deployed model; they have not been evaluated on the current 17-feature model.
 
 ### 9.4 Per-atom R1 normalization
 R1_SG has 13 unique values across the 36,828-atom polyamorphous target. The per-atom R1 normalization is implemented correctly in `build_descriptors.py`.
