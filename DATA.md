@@ -36,7 +36,7 @@ Total of the recomputed tables: about 170 MB. Git LFS is not configured; they ar
 
 The settings are in `Atomic_Simulation_Post-Processing_Pipeline/outputs/README_recomputed.md`. In short:
 
-1. Use `ANALYSIS_LEVEL: temporal_first_spatial` (needs `src/spatial_analysis_levels.py`, restored from commit `eb06523^`; see the note in the Atomic README).
+1. Use `ANALYSIS_LEVEL: temporal_first_spatial` (uses `src/spatial_analysis_levels.py`, which is in the repository).
 2. For each reference dataset, set `SNAPSHOT_DIRECTORY` to its folder and `output_csv` to the matching `outputs/features_<dataset>_recomputed.csv`. Set `composition.type_1_fraction` and `type_2_fraction` to the dataset composition (0.50/0.50, 0.46/0.54 or 0.64/0.36).
 3. For the target, use `SNAPSHOT_DIRECTORY: "../Machine_Learning_Pipeline_for_Materials_Science/data/polyamorphous/"` (the default in `config.yaml`) and `output_csv: outputs/features_polyamorphous_recomputed.csv`. Raise `WORKER_TIMEOUT` (for example 20000 s) for the 36,828-atom frames.
 4. Run `python src/pipeline_orchestrator.py --config config.yaml` from `Atomic_Simulation_Post-Processing_Pipeline/`.

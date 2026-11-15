@@ -8,8 +8,7 @@ They are produced by `pipeline_orchestrator.py` with `ANALYSIS_LEVEL: temporal_f
 using the same config.yaml as the repo, with SNAPSHOT_DIRECTORY pointing to each snapshot folder.
 
 Requirements:
-- `spatial_analysis_levels.py` was removed from src/ in commit eb06523. Restore it from history:
-  `git show eb06523^:Atomic_Simulation_Post-Processing_Pipeline/src/spatial_analysis_levels.py`
+- `src/spatial_analysis_levels.py` is required (restored unchanged from commit eb06523^).
 - freud-analysis==3.2, pyvoro==1.3.2 (see environment.yml).
 - Target run needs about 35 min with one worker; 36,828 atoms per frame use a lot of RAM
   (8 workers ran out of memory on a 7 GB machine).

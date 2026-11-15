@@ -58,3 +58,9 @@ scripts/sync_dashboard_to_html.py
 
 # Large recomputed feature tables (regenerate: see outputs/README_recomputed.md)
 Atomic_Simulation_Post-Processing_Pipeline/outputs/features_*_recomputed.csv
+
+# Retired one-off scripts: kept locally, not versioned
+scripts/apply_5_fixes.py
+scripts/apply_center_and_nowrap.py
+scripts/apply_ui_polish.py
+scripts/generate_canvas_atoms.py

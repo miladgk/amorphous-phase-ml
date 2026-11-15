@@ -8,11 +8,7 @@ and temporal/spatial averages across snapshots. Its output CSVs are the inputs o
 The 17 features used by the deployed model are listed in `../PIPELINE.md` and in
 `../Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/ref_config.yaml`.
 
-> **Note:** `src/spatial_analysis_levels.py` is not in the current tree. It was removed in commit `eb06523`
-> and is needed for `ANALYSIS_LEVEL: temporal_first_spatial`, which produced the current feature tables.
-> Restore it with:
-> `git show eb06523^:Atomic_Simulation_Post-Processing_Pipeline/src/spatial_analysis_levels.py > src/spatial_analysis_levels.py`
-> (`temporal_only` runs without it). See `outputs/README_recomputed.md`.
+> **Note:** `src/spatial_analysis_levels.py` is required for `ANALYSIS_LEVEL: temporal_first_spatial`, which produced the current feature tables. It is the file from commit `eb06523^`, restored unchanged. `temporal_only` runs without it. See `outputs/README_recomputed.md`.
 
 ---
 
@@ -38,6 +34,7 @@ The 17 features used by the deployed model are listed in `../PIPELINE.md` and in
 | `src/rdf.py` | Per-atom RDF with KD-tree neighbour search and minimum-image convention. |
 | `src/peak_analysis.py` | RDF smoothing, peak detection, Gaussian fits and ratio validation. |
 | `src/temporal_averaging.py` | Averages per-snapshot values per atom. |
+| `src/spatial_analysis_levels.py` | Spatial averaging over Voronoi neighbours and peak analysis (`temporal_first_spatial`). |
 | `src/implement_s2_isb.py` | S2 pair-entropy and ISB feature functions. The script also contains an older binary-training routine that is not part of the current pipeline. |
 | `config.yaml` | All pipeline parameters: analysis level, peak thresholds, atomic radii, snapshot directory, output CSV. |
 | `config/freud.ini` | freud library settings. |

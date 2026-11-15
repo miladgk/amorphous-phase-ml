@@ -387,8 +387,8 @@ The pipeline does not save norm_params to disk. They are recomputed from referen
 ### 9.7 process_trajectory.py has stale whitelist
 The `WHITELIST` in `process_trajectory.py` still includes CSRO features that the deployed 17-feature model does not use. This file needs updating for consistency.
 
-### 9.8 Spatial analysis module missing from src/
-`spatial_analysis_levels.py` was removed in commit eb06523. The `temporal_first_spatial` step needs it. Restore with `git show eb06523^:Atomic_Simulation_Post-Processing_Pipeline/src/spatial_analysis_levels.py`. Without it, only `temporal_only` runs (which lacks the spatial R1/Gaussian features).
+### 9.8 Spatial analysis module (resolved)
+`spatial_analysis_levels.py` was removed in commit eb06523 and is restored in `src/` unchanged (identical to `eb06523^`). The `temporal_first_spatial` step needs it; `temporal_only` runs without it, but then the spatial R1/Gaussian features are not produced.
 
 ### 9.9 Holdout is one simulation box per phase
 Each reference phase is a single box. The spatial holdout splits atoms inside one box, so it cannot separate phase structure from a box-specific signature. The MRO leak (§8.2 of PROJECT_BRIEF) was one example. A species-blind SOAP test (`experiments/soap_species_blind/RESULT.md`) gave Cu50/Cu46 F1 ≈ 0.64/0.66 but this is unresolved for the same reason.
