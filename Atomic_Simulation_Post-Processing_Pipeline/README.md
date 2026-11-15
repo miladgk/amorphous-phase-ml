@@ -1,5 +1,7 @@
 # Atomic Simulation Post-Processing Pipeline  
 
+> **Note (2026-11-15):** `src/spatial_analysis_levels.py` was removed in commit `eb06523` and is needed for `ANALYSIS_LEVEL: temporal_first_spatial`. Restore it with `git show eb06523^:Atomic_Simulation_Post-Processing_Pipeline/src/spatial_analysis_levels.py > src/spatial_analysis_levels.py`. The `temporal_only` mode works without it. The current feature tables were produced with `temporal_first_spatial` (see `outputs/README_recomputed.md`).
+
 This project provides a comprehensive, parallelized pipeline for the structural analysis of atomistic simulation data, particularly from **LAMMPS** trajectories. It's designed to streamline the post-processing workflow, integrating snapshot parsing, temporal averaging, and multi-level spatial analysis to produce detailed, per-atom structural metrics. The pipeline enables high-throughput, reproducible, and parameterized characterization of complex systems, which is crucial for computational materials science and molecular dynamics.  
 
 ---

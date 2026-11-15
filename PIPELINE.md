@@ -1,6 +1,19 @@
 # Pipeline Technical Specification
 
-## Current State as of 2026-07-09
+## Current State (updated 2026-11-15)
+
+**Deployed model: 17 features** (the whitelist in `ref_config.yaml`). `pe_volume_residual` is listed in older text below but the current pipeline does not produce it, so it is not in the model.
+
+Results on the spatial holdout (16,227 test atoms; the 6 Cu64Zr36 test rows with NaN are dropped):
+- Test accuracy 67.8 %, CV macro F1 0.670 ± 0.005
+- F1: Cu50Zr50 0.504, Cu46Zr54 0.590, Cu64Zr36 0.900
+
+Feature tables are recomputed from the snapshots with `temporal_first_spatial`:
+- References: 11 snapshots each, averaged per atom.
+- Target: 9 snapshots (`anneal_combined_0 … 8000000`), averaged per atom. Previously the target used frame 0 only.
+- Snapshot spacing: timestep index step 1e6 with dt = 2 fs (≈2 ns between saved frames). Dynamic (time-correlation) descriptors are therefore not meaningful here.
+
+Sections below that mention 18 features or the older numbers are kept for history; §8.2, §9 and §6.1 are updated where noted.
 
 This document traces the actual code paths for every step of the feature-extraction and ML pipeline. Where a design decision was made for a specific reason, it's noted as institutional memory.
 
@@ -36,7 +49,7 @@ Controlled by `Atomic_Simulation_Post-Processing_Pipeline/config.yaml`:
 File: `Atomic_Simulation_Post-Processing_Pipeline/src/snapshot_processor.py`
 Function: `process_snapshot()`
 
-Each snapshot is processed independently. The following describes every feature in the current 18-feature whitelist (plus q4_5a/q6_5a which are present in CSV but not in the deployed model).
+Each snapshot is processed independently. The following describes every feature in the current 17-feature whitelist (historical 18-feature text below) (plus q4_5a/q6_5a which are present in CSV but not in the deployed model).
 
 ### 2.1 Per-atom vs per-structure-global
 **Critical distinction:** Some features are per-atom (each atom gets its own value), others are per-structure-global (one value for the whole snapshot assigned to every atom). Tracking this distinction is essential for understanding what the model can and cannot learn.
@@ -146,7 +159,7 @@ Each snapshot is processed independently. The following describes every feature 
 
 ### 2.3 Features NOT in the whitelist (but computed)
 
-These are computed by the pipeline but excluded from training due to the 18-feature whitelist:
+These are computed by the pipeline but excluded from training by the 17-feature whitelist:
 
 - **MRO depth-1:** `mean_neighbor_volume_temporal`, `mean_neighbor_CN_temporal`, `mean_neighbor_pe_temporal`, etc. — averaged over Voronoi neighbors. Excluded because spatial holdout testing showed they leak simulation-box identity.
 - **MRO depth-2/3:** `mean_2nd_neighbor_*`, `mean_3rd_neighbor_*` — same leak issue.
@@ -244,8 +257,8 @@ However, since the raw CSV contains positions from ONE snapshot (the last one), 
 ## 6. MODEL INPUT
 
 ### 6.1 Classifier input
-- **Shape:** `(N_train, 18)` where N_train ≈ 16,245 (after spatial holdout split from 36,828 reference atoms)
-- **Column order** (18 features):
+- **Shape:** `(N_train, 17)` where N_train ≈ 16,245 (after spatial holdout split from 36,828 reference atoms)
+- **Column order** (17 features; `pe_volume_residual` is not produced and is not in the model):
 
 ```
 R1_SG, voronoi_volume_temporal, CN_temporal, q4, q6,
@@ -254,15 +267,15 @@ neighbor_1, neighbor_2,
 excess_energy_temporal, local_energy_fluctuation_temporal,
 hydrostatic_pressure_temporal, von_mises_stress_temporal,
 deviatoric_norm_temporal, stress_anisotropy_temporal,
-local_enthalpy_temporal, pe_atom_std_temporal, pe_volume_residual
+local_enthalpy_temporal, pe_atom_std_temporal
 ```
 
 - **Labels:** integer 0=Cu50Zr50, 1=Cu46Zr54, 2=Cu64Zr36
 
 ### 6.2 Regressor input
-- **Same 18 features** as the classifier, same column order, same spatial splits.
+- **Same 17 features** as the classifier, same column order, same spatial splits.
 - **Target:** Continuous Voronoi Cu fraction (0.0-1.0), computed as `(#Cu Voronoi neighbors) / (total Voronoi neighbors)`.
-- **Shape:** Same as classifier: `(N_train, 18)`.
+- **Shape:** Same as classifier: `(N_train, 17)`.
 
 ### 6.3 Feature column order is CRITICAL
 Tree-based models (HistGB) index features by **position**, not by name. The `training_meta` dict stores `feature_order` — the exact list of column names in the order they were used during training. Inference MUST produce columns in the exact same order, or predictions will be silently wrong.
@@ -304,11 +317,11 @@ Path: `general_phase_id_output/`
 ```python
 {
     'model_type': 'HistGradientBoostingClassifier',
-    'n_features': 18,
+    'n_features': 17,
     'n_classes': 3,
     'class_names': ['Cu50Zr50', 'Cu46Zr54', 'Cu64Zr36'],
     'mro_depth': 3,
-    'feature_whitelist': [...],  # the 18-feature list
+    'feature_whitelist': [...],  # the 17-feature list
     'feature_order': [...],  # exact column order used for X
 }
 ```
@@ -344,7 +357,7 @@ Path: `general_phase_id_output/`
    - `LocalCuFraction` (regressor prediction, 0.0-1.0)
    Write as one frame with identical header + new columns.
 
-### 8.2 Current parameters (18-feature model)
+### 8.2 Current parameters (17-feature model)
 - **Smoothing min_agreement:** 0.50
 - **Classifier confidence threshold:** 0.50 (below this = "Uncertain" in reporting, but all atoms get a PhaseID regardless; the LAMMPS output has no special Uncertain marker)
 - **Regressor:** HistGradientBoostingRegressor, same hyperparameters as classifier
@@ -354,7 +367,7 @@ Path: `general_phase_id_output/`
 ## 9. KNOWN LIMITATIONS AND CAVEATS
 
 ### 9.1 A/B boundary is a continuous gradient
-Confirmed by direct regression (R²=0.938, MAE=0.024 on held-out reference data, R²=0.972 on polyamorphous target). The Cu fraction changes smoothly from ~0.40 to ~0.45 over ~40Å across the left→middle boundary. Discrete PhaseID labels in this region are inherently ambiguous. **Use LocalCuFraction for visualization in this region.**
+Confirmed by direct regression in an earlier run (R²=0.938, MAE=0.024 on held-out reference data, R²=0.972 on polyamorphous target). The regression was not re-run on the recomputed features. The Cu fraction changes smoothly from ~0.40 to ~0.45 over ~40Å across the left→middle boundary. Discrete PhaseID labels in this region are inherently ambiguous. **Use LocalCuFraction for visualization in this region.**
 
 ### 9.2 C's residual 3.6% misclassification
 After Voronoi smoothing, ~3.6% of right-region atoms are still labeled as Phase A or B. This is real local compositional heterogeneity, not classifier error: these atoms have mean LocalCuFraction=0.48 vs 0.59 for correctly-labeled Phase C atoms. The model correctly predicts their local environment — it's the local composition that genuinely differs from bulk Cu₆₄Zr₃₆.
@@ -368,8 +381,14 @@ R1_SG has 13 unique values across the 36,828-atom polyamorphous target. The per-
 ### 9.5 norm_params not saved
 The pipeline does not save norm_params to disk. They are recomputed from reference CSVs at each inference run. This is fragile — if reference CSV files are moved or the whitelist changes, norm_params will silently differ.
 
-### 9.6 Config file lists 21 features
-The deployed `ref_config.yaml` lists 21 features (18 original + 3 CSRO), but the actual deployed 18-feature model excludes CSRO features. The config file has not been updated to match the deployed model.
+### 9.6 Config file (resolved)
+`ref_config.yaml` now lists exactly the 17 features of the deployed model. CSRO and other extras are not in the whitelist.
 
 ### 9.7 process_trajectory.py has stale whitelist
-The `WHITELIST` in `process_trajectory.py` was updated to include CSRO features but the 18-feature model that was validated doesn't use them. This file needs updating for consistency.
+The `WHITELIST` in `process_trajectory.py` still includes CSRO features that the deployed 17-feature model does not use. This file needs updating for consistency.
+
+### 9.8 Spatial analysis module missing from src/
+`spatial_analysis_levels.py` was removed in commit eb06523. The `temporal_first_spatial` step needs it. Restore with `git show eb06523^:Atomic_Simulation_Post-Processing_Pipeline/src/spatial_analysis_levels.py`. Without it, only `temporal_only` runs (which lacks the spatial R1/Gaussian features).
+
+### 9.9 Holdout is one simulation box per phase
+Each reference phase is a single box. The spatial holdout splits atoms inside one box, so it cannot separate phase structure from a box-specific signature. The MRO leak (§8.2 of PROJECT_BRIEF) was one example. A species-blind SOAP test (`experiments/soap_species_blind/RESULT.md`) gave Cu50/Cu46 F1 ≈ 0.64/0.66 but this is unresolved for the same reason.
