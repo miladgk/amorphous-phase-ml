@@ -27,7 +27,7 @@ Saves at 220 DPI.
 """
 
 import os
-import ast
+import json
 import math
 import numpy as np
 import pandas as pd
@@ -59,9 +59,14 @@ def save_all_targets(fig, filename):
         fig.savefig(path, dpi=220, facecolor=fig.get_facecolor(), edgecolor='none', bbox_inches='tight')
         print(f"Saved: {path}")
 
-# Load predictions
+# Load predictions and the validation / dashboard data (all from the current 17-feature run)
 print("Loading predictions dataset...")
 df = pd.read_csv('general_phase_id_output/predictions.csv')
+VAL = json.load(open('docs/assets/validation_summary.json', encoding='utf-8'))
+DASH = json.load(open('docs/assets/dashboard_real_data.json', encoding='utf-8'))
+PERM = json.load(open('general_phase_id_output/permutation_importance.json', encoding='utf-8'))
+ACC = VAL['spatial_holdout_accuracy']['mean'] * 100
+F1C64 = VAL['per_class_f1']['Phase_C']
 
 phase_colors = {
     'Cu50Zr50': '#38bdf8',
@@ -73,7 +78,7 @@ phase_colors = {
 # Figure 1: Spatial Phase Distribution & Phase Profile along X
 # -------------------------------------------------------------------------
 print("Generating Fig 1: phase_spatial_distribution.png ...")
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 9), gridspec_kw={'height_ratios': [2, 1]})
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 11.5), gridspec_kw={'height_ratios': [2, 1], 'hspace': 0.42})
 
 for phase_name, col in phase_colors.items():
     mask = df['predicted_phase_name'] == phase_name
@@ -111,18 +116,18 @@ plt.close(fig)
 # Figure 2: Local Stress Tensor & Pressure Contours
 # -------------------------------------------------------------------------
 print("Generating Fig 2: stress_contours.png ...")
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 9))
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 11.5), gridspec_kw={'hspace': 0.42})
 
 # Von Mises Stress
 sc1 = ax1.scatter(df['x'], df['y'], c=df['von_mises_stress_temporal'] / 10.0,
                   cmap='magma', s=8, alpha=0.85, edgecolors='none')
 cbar1 = plt.colorbar(sc1, ax=ax1, pad=0.015)
-cbar1.set_label('Von Mises Shear Stress (MPa, bar ÷ 10)', fontsize=11, color='#e2e8f0')
+cbar1.set_label('Von Mises Stress (MPa, bar ÷ 10)', fontsize=11, color='#e2e8f0')
 cbar1.ax.yaxis.set_tick_params(color='#e2e8f0')
 plt.setp(plt.getp(cbar1.ax.axes, 'yticklabels'), color='#e2e8f0')
 cbar1.outline.set_edgecolor('#334155')
 
-ax1.set_title('Spatial Stress Field: Local Per-Atom Virial Shear Stress (9-Frame Averaged)', fontsize=13, fontweight='bold', pad=10)
+ax1.set_title('Spatial Stress Field: Local Per-Atom Von Mises Stress (virial / Voronoi volume, 9-Frame Averaged)', fontsize=13, fontweight='bold', pad=10)
 ax1.set_xlabel('X (Å)', fontsize=11)
 ax1.set_ylabel('Y (Å)', fontsize=11)
 ax1.grid(True, color='#1e293b', alpha=0.5, linestyle=':')
@@ -148,11 +153,7 @@ plt.close(fig)
 # Figure 3: Spatial Holdout Confusion Matrix Heatmap
 # -------------------------------------------------------------------------
 print("Generating Fig 3: confusion_matrix.png ...")
-cm_data = np.array([
-    [3102, 1869, 161],
-    [1901, 3201, 35],
-    [149, 10, 5805]
-])
+cm_data = np.array(VAL['confusion_matrix'])
 labels = ['Cu50Zr50', 'Cu46Zr54', 'Cu64Zr36']
 cm_norm = cm_data.astype('float') / cm_data.sum(axis=1)[:, np.newaxis]
 
@@ -166,7 +167,7 @@ cbar.outline.set_edgecolor('#334155')
 
 for i in range(len(labels)):
     for j in range(len(labels)):
-        text_color = '#ffffff' if cm_norm[i, j] > 0.45 else '#94a3b8'
+        text_color = '#ffffff' if cm_norm[i, j] > 0.55 else '#0f172a'
         ax.text(j, i, f"{cm_data[i, j]:,}\n({cm_norm[i, j]*100:.1f}%)",
                 ha="center", va="center", color=text_color, fontsize=11.5, fontweight='bold')
 
@@ -176,7 +177,7 @@ ax.set_xticklabels([f"Pred {l}" for l in labels], fontsize=11, fontweight='semib
 ax.set_yticklabels([f"True {l}" for l in labels], fontsize=11, fontweight='semibold')
 ax.set_xlabel('Predicted Structural Phase', fontsize=12, fontweight='bold', labelpad=10)
 ax.set_ylabel('True Reference Phase', fontsize=12, fontweight='bold', labelpad=10)
-ax.set_title('Spatial Holdout Confusion Matrix\n(Accuracy: 74.59% | Cu64Zr36 F1: 97.03%)',
+ax.set_title(f'Spatial Holdout Confusion Matrix\n(Accuracy: {ACC:.2f}% | Cu64Zr36 F1: {F1C64:.4f})',
              fontsize=13, fontweight='bold', pad=14)
 
 save_all_targets(fig, 'confusion_matrix.png')
@@ -186,19 +187,8 @@ plt.close(fig)
 # Figure 4: Feature Importance Ranking (Permutation Importance)
 # -------------------------------------------------------------------------
 print("Generating Fig 4: feature_importance.png ...")
-features = [
-    'local_enthalpy_temporal',
-    'excess_energy_temporal',
-    'pe_volume_residual',
-    'voronoi_volume_temporal',
-    'hydrostatic_pressure_temporal',
-    'R1_SG',
-    'deviatoric_norm_temporal',
-    'CN_temporal',
-    'gaussian_peak3_center',
-    'neighbor_1'
-]
-importances = [0.2450, 0.2158, 0.2150, 0.1186, 0.0456, 0.0363, 0.0288, 0.0055, 0.0053, 0.0032]
+features = [it['feature'] for it in PERM['items']]
+importances = [it['importance'] for it in PERM['items']]
 
 fig, ax = plt.subplots(figsize=(10.5, 6.5))
 y_pos = np.arange(len(features))
@@ -212,7 +202,7 @@ for idx in range(len(bars)-3, len(bars)):
 ax.set_yticks(y_pos)
 ax.set_yticklabels(features[::-1], fontsize=10.5)
 ax.set_xlabel('Permutation Feature Importance (Mean Accuracy Drop)', fontsize=11.5, fontweight='bold', labelpad=10)
-ax.set_title('Top Structural & Thermodynamic Descriptors for Phase Classification', fontsize=13, fontweight='bold', pad=12)
+ax.set_title('Top-10 Permutation Importance (17-feature model, spatial holdout)', fontsize=13, fontweight='bold', pad=12)
 for i, v in enumerate(importances[::-1]):
     ax.text(v + 0.004, i, f"{v:.4f}", va='center', fontsize=10, fontweight='bold', color='#f8fafc')
 ax.set_xlim(0, max(importances) * 1.16)
@@ -225,11 +215,12 @@ plt.close(fig)
 # Figure 5: Phase Fractions vs Confidence Thresholds
 # -------------------------------------------------------------------------
 print("Generating Fig 5: phase_composition_fractions.png ...")
-thresholds = [0.50, 0.60, 0.70, 0.80, 0.90]
-cu50 = [32.04, 20.8, 10.2, 2.8, 0.2]
-cu46 = [24.74, 17.8, 11.7, 6.2, 1.8]
-cu64 = [37.08, 34.4, 31.7, 28.0, 22.5]
-uncertain = [6.14, 26.9, 46.5, 63.1, 75.4]
+CR = DASH['cutoff_records']
+thresholds = [r['threshold'] for r in CR]
+cu50 = [r['p0_pct'] for r in CR]
+cu46 = [r['p1_pct'] for r in CR]
+cu64 = [r['p2_pct'] for r in CR]
+uncertain = [r['unc_pct'] for r in CR]
 
 fig, ax = plt.subplots(figsize=(10.5, 6))
 bar_w = 0.17
@@ -245,7 +236,7 @@ ax.set_ylabel('Atomic Fraction (%)', fontsize=11.5, fontweight='bold', labelpad=
 ax.set_title('Polyamorphous Target Phase Fractions Across Confidence Thresholds', fontsize=13, fontweight='bold', pad=12)
 ax.set_xticks(r)
 ax.set_xticklabels([f"≥ {t:.2f}" for t in thresholds], fontsize=10.5, fontweight='semibold')
-ax.legend(title='Phase Classification', loc='upper right', frameon=True, fontsize=10, title_fontsize=11)
+ax.legend(title='Phase Classification', loc='upper left', frameon=True, fontsize=10, title_fontsize=11)
 ax.set_ylim(0, 85)
 ax.grid(True, axis='y', color='#1e293b', alpha=0.7, linestyle='--')
 
@@ -256,83 +247,55 @@ plt.close(fig)
 # Figure 6: Sample Atom RDF Peak Analysis (Atom ID 35)
 # -------------------------------------------------------------------------
 print("Generating Fig 6: sample_peak_polyamorphous.png ...")
-feat_df = pd.read_csv('Atomic_Simulation_Post-Processing_Pipeline/outputs/features_polyamorphous_csro_fixed.csv')
+RDF = DASH['rdf_atom35']
+feat_df = pd.read_csv('Atomic_Simulation_Post-Processing_Pipeline/outputs/features_polyamorphous_recomputed.csv', usecols=['id','R1_SG','gaussian_peak2_center','gaussian_peak2_height','gaussian_peak2_sigma','gaussian_peak3_center','gaussian_peak3_height','gaussian_peak3_sigma'])
 row35 = feat_df[feat_df['id'] == 35].iloc[0]
-
-original_rdf = np.array(ast.literal_eval(row35['g_i_r_temporal_avg']))
-r_min, r_max, num_bins = 0.01, 12.0, 100
-bin_edges = np.linspace(r_min, r_max, num_bins + 1)
-r_values = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-smoothed_rdf = savgol_filter(original_rdf, 11, 5)
-
-global_peaks_r = [2.5878, 4.5062, 4.866, 5.1058, 5.8252, 6.6644, 7.264, 7.9834, 8.7028, 9.542, 9.9018, 10.5012, 11.4605]
-global_peaks_h = [2.9947, 1.2757, 1.2519, 1.3614, 1.0929, 1.1204, 1.1576, 1.4255, 0.7252, 1.0183, 1.0081, 1.1416, 0.7534]
-targeted_peaks_r = [4.5062, 5.1058]
-targeted_peaks_h = [2.2359, 1.3062]
-r1_val = 2.5878
-
-expected_ratios_map = {
-    "sqrt3": math.sqrt(3),
-    "sqrt4": math.sqrt(4),
-    "sqrt7": math.sqrt(7),
-    "sqrt12": math.sqrt(12),
-}
-validation_results = {
-    "sqrt3": 4.5062,
-    "sqrt4": 5.1058,
-    "sqrt7": 6.6644,
-    "sqrt12": 8.7028,
-}
+r_values = np.array(RDF['r'])
+original_rdf = np.array(RDF['raw'])
+smoothed_rdf = np.array(RDF['smooth'])
+r_max = 12.0
+r1_val = float(row35['R1_SG'])
+fit_h1, fit_c1, fit_w1 = float(row35['gaussian_peak2_height']), float(row35['gaussian_peak2_center']), float(row35['gaussian_peak2_sigma'])
+fit_h2, fit_c2, fit_w2 = float(row35['gaussian_peak3_height']), float(row35['gaussian_peak3_center']), float(row35['gaussian_peak3_sigma'])
+expected_ratios_map = {"sqrt3": math.sqrt(3), "sqrt4": math.sqrt(4), "sqrt7": math.sqrt(7), "sqrt12": math.sqrt(12)}
 
 fig, ax = plt.subplots(figsize=(12, 7))
 
 ax.plot(r_values, original_rdf, label="Original Avg RDF", alpha=0.45, color="#64748b", lw=1.2, zorder=1)
-ax.plot(r_values, smoothed_rdf, label="Smoothed (w=11, p=5)", color="#38bdf8", lw=2.2, zorder=2)
-ax.plot(global_peaks_r, global_peaks_h, "x", color="#f87171", markersize=8, mew=2, label="Global Peaks", zorder=3)
-
-if len(targeted_peaks_r) > 0:
-    ax.plot(targeted_peaks_r, targeted_peaks_h, "o", color="#ec4899", markersize=8, mfc="none", mew=1.8,
-            label="Targeted Peaks (2nd)", zorder=4)
+ax.plot(r_values, smoothed_rdf, label="Smoothed (Savitzky–Golay, w=11, p=5)", color="#38bdf8", lw=2.2, zorder=2)
 
 if not np.isnan(r1_val):
     ax.axvline(r1_val, color="#34d399", linestyle="--", linewidth=1.2, label=f"Identified R1 ({r1_val:.3f} Å)", zorder=0)
 
     for label, ratio in expected_ratios_map.items():
         r_exp = r1_val * ratio
-        val_r = validation_results.get(label)
-        color = "#a855f7" if val_r is None else "#fb923c"
-        linestyle = ":" if val_r is None else "-."
-        linewidth = 1.0 if val_r is None else 1.4
+        color = "#a855f7"
+        linestyle = ":"
+        linewidth = 1.0
         if r_exp <= r_max:
             ax.axvline(r_exp, color=color, linestyle=linestyle, linewidth=linewidth, alpha=0.75,
                        label=f"{label}*R1 ({r_exp:.3f} Å)", zorder=0)
-        if val_r is not None:
-            idx_closest = np.argmin(np.abs(r_values - val_r))
-            ax.plot(val_r, original_rdf[idx_closest], "s", color="#fb923c", markersize=7, mfc="none", mew=1.8,
-                    label=f"Validated {label}", zorder=4)
 
-# Double Gaussian Fit
+# Double Gaussian fit as produced by the pipeline (gaussian_peak2/3 columns of the target table)
 def double_gaussian(x, h1, c1, w1, h2, c2, w2):
     g1 = h1 * np.exp(-((x - c1) ** 2) / (2 * w1 ** 2))
     g2 = h2 * np.exp(-((x - c2) ** 2) / (2 * w2 ** 2))
     return g1 + g2
 
-fit_h1, fit_c1, fit_w1 = 1.1801, 4.5194, 0.6188
-fit_h2, fit_c2, fit_w2 = 0.7345, 5.3760, 0.3123
-fit_r_min = r1_val * 1.5
+fit_r_min = r1_val * 1.4
 fit_r_max = r1_val * 2.2
 fit_indices = np.where((r_values >= fit_r_min) & (r_values <= fit_r_max))[0]
 x_fit_plot = r_values[fit_indices]
 y_fit_plot = double_gaussian(x_fit_plot, fit_h1, fit_c1, fit_w1, fit_h2, fit_c2, fit_w2)
 
 ax.plot(x_fit_plot, y_fit_plot, color="#22d3ee", linewidth=2.4, linestyle="--",
-        label=f"Double Gaussian Fit (R²=0.820)", zorder=5)
+        label="Double Gaussian fit (pipeline peaks 2 & 3)", zorder=5)
 ax.axvline(fit_c1, color="#22d3ee", linestyle=":", alpha=0.75, label=f"Fit C1 ({fit_c1:.3f} Å)")
 ax.axvline(fit_c2, color="#22d3ee", linestyle=":", alpha=0.75, label=f"Fit C2 ({fit_c2:.3f} Å)")
 
 ax.set_xlabel("r (Å)", fontsize=12, fontweight='bold', labelpad=8)
 ax.set_ylabel("g(r)", fontsize=12, fontweight='bold', labelpad=8)
-ax.set_title("Peak Analysis & Crystallographic Validation for Sample Atom ID 35",
+ax.set_title(f"RDF of Sample Atom ID 35 (target box, 9-frame average): R1 = {r1_val:.3f} Å",
              fontsize=13, fontweight='bold', pad=12)
 ax.legend(fontsize=9, loc="upper right", frameon=True, ncol=2)
 ax.grid(True, alpha=0.6, color='#1e293b')

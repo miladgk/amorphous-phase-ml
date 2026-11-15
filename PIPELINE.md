@@ -85,7 +85,7 @@ Each snapshot is processed independently. The following describes every feature 
       positions, {'r_max': 3.5, 'exclude_ii': True}
   ).toNeighborList()
   ```
-  This cutoff was chosen because it corresponds to the first coordination shell in Cu-Zr metallic glasses. Wang et al. (2026) found 5Å carries more information, but q4/q6 at 3.5Å are what the 18-feature model uses.
+  This cutoff was chosen because it corresponds to the first coordination shell in Cu-Zr metallic glasses. Wang et al. (2026) found 5Å carries more information, but q4/q6 at 3.5Å are what the deployed 17-feature model uses.
 - **Temporal aggregation:** Per-atom mean across snapshots (via `grouped_atoms['q4'].mean()` in `temporal_averaging.py`).
 - **Normalization:** Already dimensionless, passed through.
 
@@ -186,7 +186,7 @@ All snapshots' atom data are flattened into a single DataFrame. Then:
 5. **`csro_unlike_std_temporal`** similarly uses `.std()` rather than `.mean()`.
 
 ### What this means
-Every `*_temporal` feature is a per-atom mean (or std for two features) across the temporal window of 11 (reference) or 9 (polyamorphous) snapshots. The snapshots are independent trajectory frames at 50ps intervals after equilibration.
+Every `*_temporal` feature is a per-atom mean (or std for two features) across the temporal window of 11 (reference) or 9 (polyamorphous) snapshots. The snapshots are trajectory frames saved every 1e6 MD steps (dt = 2 fs, so about 2 ns apart) after equilibration.
 
 ---
 
