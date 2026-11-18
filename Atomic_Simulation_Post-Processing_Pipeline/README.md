@@ -15,11 +15,11 @@ The 17 features used by the deployed model are listed in `../PIPELINE.md` and in
 ## Features
 
 - Parallel processing of snapshots (`concurrent.futures`, chunked; `WORKER_TIMEOUT` in `config.yaml`).
-- Voronoi tessellation with periodic boundaries (`voronoi.py`, PyVoro; freud for neighbour and bond-order calculations).
+- Voronoi tessellation with periodic boundaries (`voronoi.py`): freud is the primary backend (unweighted); PyVoro with the `atomic_radii` weights is the fallback. Voronoi face counts come from freud polytopes.
 - Steinhardt bond-order parameters q4 and q6 (`snapshot_processor.py`, cutoff 3.5 Å).
 - RDF per atom with Savitzky–Golay smoothing, global and targeted peak search, Gaussian fits and validation against crystallographic ratios (`rdf.py`, `peak_analysis.py`).
 - Temporal averaging over snapshots (`temporal_averaging.py`) and spatial averaging over Voronoi neighbours (`ANALYSIS_LEVEL: temporal_first_spatial`).
-- Medium-range order (MRO) and CSRO features are computed (`COMPUTE_SECOND_LEVEL_MRO: true`). The deployed model excludes them because they leak simulation-box identity (see `../PIPELINE.md` §8.2).
+- Medium-range order (MRO) and CSRO features are computed (`COMPUTE_SECOND_LEVEL_MRO: true`). The deployed model excludes MRO because it leaks simulation-box identity, and CSRO because it is not validated as leak-free (see `../PIPELINE.md` §2.4 and §9.2).
 
 ---
 
@@ -30,7 +30,7 @@ The 17 features used by the deployed model are listed in `../PIPELINE.md` and in
 | `src/pipeline_orchestrator.py` | Entry point: loads the configuration, processes snapshots, averages, runs peak analysis and writes the CSV. |
 | `src/snapshot_processor.py` | Per-snapshot processing: parses dumps, Voronoi, RDF, q4/q6. |
 | `src/io_module.py` | LAMMPS dump reader (box bounds, types, radii; radii come from `atomic_radii` in the config). |
-| `src/voronoi.py` | Weighted Voronoi tessellation in periodic domains (PyVoro). |
+| `src/voronoi.py` | Voronoi tessellation in periodic domains (freud; PyVoro fallback) and Voronoi face counts. |
 | `src/rdf.py` | Per-atom RDF with KD-tree neighbour search and minimum-image convention. |
 | `src/peak_analysis.py` | RDF smoothing, peak detection, Gaussian fits and ratio validation. |
 | `src/temporal_averaging.py` | Averages per-snapshot values per atom. |
@@ -54,7 +54,7 @@ cd Atomic_Simulation_Post-Processing_Pipeline
 python src/pipeline_orchestrator.py --config config.yaml
 ```
 
-To compute one reference dataset, set `SNAPSHOT_DIRECTORY` (e.g. `files/snapshots_5050/`), `output_csv`, and `composition.type_1_fraction` / `type_2_fraction` in a copy of `config.yaml`. The settings used for the current tables are in `outputs/README_recomputed.md`.
+To compute one reference dataset, set `SNAPSHOT_DIRECTORY` (e.g. `files/snapshots_5050/`) and `output_csv` in a copy of `config.yaml`. The composition is counted from each snapshot (`composition.compute_from_snapshot: true`), so `type_1_fraction` / `type_2_fraction` need no change; they only affect the CSRO columns, which are not in the model. The settings used for the current tables are in `outputs/README_recomputed.md`.
 
 The worker count is taken from `multiprocessing.cpu_count()`. Runtime: about 35 minutes for the 36,828-atom target with one worker. Eight workers ran out of memory on a 7 GB machine, so limit the number of CPUs available to the process on small machines, and raise `WORKER_TIMEOUT` for the large target (`outputs/README_recomputed.md`).
 

@@ -74,7 +74,7 @@ def test_model_reload_and_predict(tmp_path):
 def test_feature_extraction_tiny_dump():
     """
     Feature extraction on a tiny synthetic LAMMPS dump produces the expected
-    18 whitelisted columns with no unexpected NaNs.
+    17 whitelisted columns with no unexpected NaNs.
     """
     import os
     dump_path = os.path.join(os.path.dirname(__file__), 'fixtures', 'tiny_dump.lammpstrj')
@@ -84,5 +84,5 @@ def test_feature_extraction_tiny_dump():
     
     # If the real extraction was run, it would assert:
     # df = run_extraction(dump_path)
-    # assert len(df.columns) == 18
+    # assert len(df.columns) == 17
     # assert not df.isna().any().any()

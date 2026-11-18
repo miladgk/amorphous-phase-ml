@@ -1,291 +1,197 @@
 # Pipeline Technical Specification
 
-## Current State (updated 2026-11-15)
+## Current State (updated 2026-11-18)
 
-**Deployed model: 17 features** (the whitelist in `ref_config.yaml`). `pe_volume_residual` is listed in older text below but the current pipeline does not produce it, so it is not in the model.
+**Deployed model: 17 features** (the whitelist in `Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/ref_config.yaml`). `pe_volume_residual` appeared in earlier lists, but the current pipeline does not produce it, so it is not in the model.
 
-Results on the spatial holdout (16,227 test atoms; the 6 Cu64Zr36 test rows with NaN are dropped):
-- Test accuracy 67.8 %, CV macro F1 0.670 ± 0.005
+Results on the spatial holdout (16,227 test atoms from the three reference boxes; see §5):
+- Test accuracy 67.8 % (11,003 / 16,227), CV macro F1 0.670 ± 0.005
 - F1: Cu50Zr50 0.504, Cu46Zr54 0.590, Cu64Zr36 0.900
 
-Feature tables are recomputed from the snapshots with `temporal_first_spatial`:
+Feature tables are computed from the snapshots with `ANALYSIS_LEVEL: temporal_first_spatial`:
 - References: 11 snapshots each, averaged per atom.
-- Target: 9 snapshots (`anneal_combined_0 … 8000000`), averaged per atom. Previously the target used frame 0 only.
-- Snapshot spacing: timestep index step 1e6 with dt = 2 fs (≈2 ns between saved frames). Dynamic (time-correlation) descriptors are therefore not meaningful here.
+- Target: 9 snapshots (`anneal_combined_0 … 8000000`), averaged per atom.
+- Snapshot spacing: timestep index step 1e6 with dt = 2 fs (about 2 ns between saved frames). Dynamic (time-correlation) descriptors are therefore not meaningful here.
 
-Sections below that mention 18 features or the older numbers are kept for history; §8.2, §9 and §6.1 are updated where noted.
-
-This document traces the actual code paths for every step of the feature-extraction and ML pipeline. Where a design decision was made for a specific reason, it's noted as institutional memory.
+This document traces the code paths of the feature-extraction and ML pipeline. Every statement below was checked against the code on 2026-11-18. Where a design decision was made for a specific reason, it is noted.
 
 ---
 
 ## 1. INPUT: Raw Simulation Data
 
 ### 1.1 File format
-LAMMPS dump files (`.lammpstrj`), potentially in multi-frame format, are split into individual snapshots by `pipeline_orchestrator.py`.
+LAMMPS dump files (`.lammpstrj`), one snapshot per file:
+- References: `Atomic_Simulation_Post-Processing_Pipeline/files/snapshots_{5050,4654,6436}/anneal_*.lammpstrj` (11 each; 11,664 / 11,664 / 13,500 atoms).
+- Target: `Machine_Learning_Pipeline_for_Materials_Science/data/polyamorphous/anneal_combined_*.lammpstrj` (9 frames; 36,828 atoms; box 181.16 × 58.96 × 58.96 Å).
 
-Required columns (must be present in `ITEM: ATOMS` section):
-- `id` — atom ID (integer)
-- `type` — atom type (integer; 1=Cu, 2=Zr in current usage)
-- `x`, `y`, `z` — cartesian coordinates (Angstrom)
-- `vx`, `vy`, `vz` — velocities
-- `c_pe_atom` — per-atom potential energy (eV)
-- `c_stress_atom[1]` through `c_stress_atom[6]` — per-atom stress tensor components (bar·Å³)
-  - LAMMPS convention: xx, yy, zz, xy, xz, yz
-  - Positive = compression
+Columns read by `io_module.py` from the `ITEM: ATOMS` section:
+- `id`, `type` (1 = Cu, 2 = Zr), `x`, `y`, `z` (Å)
+- `c_pe_atom`: per-atom potential energy (eV). If missing, set to NaN with a warning.
+- `c_stress_atom[1]` … `c_stress_atom[6]`: per-atom stress × volume (bar·Å³), order xx, yy, zz, xy, xz, yz.
+  - LAMMPS defines per-atom stress as the **negative** of the per-atom pressure tensor, so a positive diagonal value means tension. The feature named `hydrostatic_pressure` (§2.2) is the mean of these diagonal components, so positive = tension, negative = compression. The dashboard legend uses this convention.
+- The dumps also contain `vx`, `vy`, `vz`; they are not used for the features.
 
 ### 1.2 Config parameters
-Controlled by `Atomic_Simulation_Post-Processing_Pipeline/config.yaml`:
-- `SNAPSHOT_DIRECTORY`: directory containing `.lammpstrj` files
-- `type_1_fraction`, `type_2_fraction`: bulk composition fractions (used for `excess_energy` baseline)
-- `COMPUTE_SECOND_LEVEL_MRO`, `MRO_DEPTH`: depth of neighbor-averaged features
-- `ENABLE_GAUSSIAN_FIT`: whether to compute Gaussian peak fit on RDF
-- `TOTAL_SNAPSHOTS`, `EVERY_N_SNAPSHOTS`: temporal averaging window (currently 11 snapshots for reference structures, 9 for polyamorphous)
+`Atomic_Simulation_Post-Processing_Pipeline/config.yaml` (main keys):
+- `SNAPSHOT_DIRECTORY`, `output_csv`: input folder and output table (resolved relative to the config file).
+- `ANALYSIS_LEVEL: temporal_first_spatial`: temporal average, then spatial average of g_i(r) over Voronoi neighbours, then per-atom peak analysis (§2.3).
+- RDF: `R_MIN 0.01`, `R_MAX 12.0` Å, `NUM_BINS 100`; Savitzky–Golay `SMOOTHING_WINDOW 11`, `SMOOTHING_POLYORDER 5`.
+- Peak search: `G_MIN_PEAK_HEIGHT 0.2`, `G_MIN_PEAK_PROMINENCE 0.05`, `G_MIN_PEAK_DISTANCE 1`, `R1_MAX_SEARCH_R 4.0`; targeted search `T_MIN_PEAK_PROMINENCE 0.05`, `T_MIN_PEAK_DISTANCE 4`, `T_R_MIN_FACTOR 1.5`, `T_R_MAX_FACTOR 2.2`.
+- Gaussian fit: `ENABLE_GAUSSIAN_FIT`, `FIT_R_MIN_FACTOR 1.5`, `FIT_R_MAX_FACTOR 2.2`, `FIT_PEAK_WINDOW 0.5`, `FIT_MAXFEV 2000`.
+- `COMPUTE_SECOND_LEVEL_MRO: true`, `MRO_DEPTH: 3`: neighbour-averaged (MRO) columns; computed but excluded from the model (§2.4).
+- `atomic_radii`: 1 → 1.28 Å, 2 → 1.60 Å (used by the pyvoro fallback, §2.2).
+- `composition.compute_from_snapshot: true`: the global composition is counted from each snapshot. It is used only for the CSRO columns, which are not in the model. `type_1_fraction` / `type_2_fraction` are ignored while `compute_from_snapshot` is true.
+- `WORKER_TIMEOUT: 600` s per snapshot worker; raise it (e.g. 20000 s) for the 36,828-atom target.
+- The number of snapshots is the number of files in `SNAPSHOT_DIRECTORY`; there is no snapshot-count key.
 
 ---
 
-## 2. PER-SNAPSHOT FEATURE EXTRACTION
+## 2. PER-ATOM FEATURE EXTRACTION
 
-File: `Atomic_Simulation_Post-Processing_Pipeline/src/snapshot_processor.py`
-Function: `process_snapshot()`
+Files: `Atomic_Simulation_Post-Processing_Pipeline/src/snapshot_processor.py` (per snapshot), `temporal_averaging.py`, `spatial_analysis_levels.py`, `peak_analysis.py`, orchestrated by `pipeline_orchestrator.py`.
 
-Each snapshot is processed independently. The following describes every feature in the current 17-feature whitelist (historical 18-feature text below) (plus q4_5a/q6_5a which are present in CSV but not in the deployed model).
-
-### 2.1 Per-atom vs per-structure-global
-**Critical distinction:** Some features are per-atom (each atom gets its own value), others are per-structure-global (one value for the whole snapshot assigned to every atom). Tracking this distinction is essential for understanding what the model can and cannot learn.
+### 2.1 Per-atom values
+All 17 model features are per-atom values. Each is averaged over the snapshots of its box (11 or 9), except `pe_atom_std_temporal`, which is a standard deviation over the snapshots.
 
 ### 2.2 Feature-by-feature specification
 
-#### `R1_SG` — **per-atom**
-- **What:** Position (in Angstrom) of the first peak in each atom's local gᵢ(r).
-- **Algorithm:** `snapshot_processor.py` calls `rdf.compute_all_local_rdfs()` → `peak_analysis.py` identifies the first peak in the global g(r), then assigns it per-structure. For per-atom R1, it uses the per-atom gᵢ(r) peak position.
-- **Parameters:** RDF computed from 0 to `R_MAX` (default ~10Å) with `NUM_BINS` bins. Peak detection uses `scipy.signal.find_peaks` with `prominence=0.1` and `height=0.05`.
-- **Note:** R1_SG has 13 unique values across 36,828 atoms for the polyamorphous target, confirming it's genuinely per-atom variable.
+#### `voronoi_volume_temporal`, `CN_temporal`
+- **What:** Voronoi cell volume (Å³) and number of Voronoi neighbours (faces).
+- **Algorithm:** `voronoi.py`. Primary backend: `freud.locality.Voronoi` on wrapped positions in the periodic box (unweighted). Fallback if freud fails: `pyvoro` with the `atomic_radii` weights. Voronoi face counts (⟨n3,n4,n5,n6⟩) come from freud polytopes + scipy `ConvexHull` (commit `17396ea`; this replaced pyvoro, which ran out of memory).
+- **Temporal aggregation:** per-atom mean.
 
-#### `voronoi_volume_temporal` — **per-atom**
-- **What:** Volume (Å³) of each atom's Voronoi cell.
-- **Algorithm:** `snapshot_processor.py` uses `freud.locality.Voronoi()` on the wrapped atomic positions. Cell volume from the Voronoi polytope.
-- **Parameters:** Standard Voronoi tessellation with freud. No explicit cutoff (Voronoi is global by construction).
-- **Temporal aggregation:** Per-atom mean across snapshots.
-- **Normalization:** Divided by per-atom R1_SG³ → becomes unit-free volume ratio.
+#### `neighbor_1`, `neighbor_2`
+- **What:** Number of type-1 (Cu) and type-2 (Zr) Voronoi neighbours (`neighbors_by_type` in `snapshot_processor.py`).
+- **Temporal aggregation:** per-atom mean (`neighbor_records.groupby(level=0).mean()` in `temporal_averaging.py`).
 
-#### `CN_temporal` — **per-atom**
-- **What:** Coordination number = number of Voronoi neighbors.
-- **Algorithm:** Number of faces in the Voronoi cell. From `freud.locality.Voronoi()` polytope neighbor count.
-- **Parameters:** Same as Voronoi above.
-- **Temporal aggregation:** Per-atom mean across snapshots.
-- **Normalization:** Already dimensionless, passed through.
+#### `q4`, `q6`
+- **What:** Steinhardt bond-orientational order parameters, l = 4 and l = 6.
+- **Algorithm:** `freud.order.Steinhardt(l, average=False)` with a neighbour list from a ball query with `r_max = 3.5` Å, hard-coded in `snapshot_processor.py` (line 618). The Lechner–Dellago variants (`q4_avg`, `q6_avg`) and `w4` are also written to the table but are not in the model. There are no 5 Å variants in the current tables.
+- **Temporal aggregation:** per-atom mean.
 
-#### `q4`, `q6` — **per-atom**
-- **What:** Steinhardt bond orientational order parameters (rotationally invariant 2nd-order, l=4 and l=6).
-- **Algorithm:** `freud.order.Steinhardt(l=4, average=False)` and `(l=6, average=False)`.
-- **Critical parameter:** `r_max=3.5` Å. This is **hardcoded** in `snapshot_processor.py` line 618:
-  ```python
-  neighbor_list = neighbor_query.query(
-      positions, {'r_max': 3.5, 'exclude_ii': True}
-  ).toNeighborList()
-  ```
-  q4/q6 at 3.5 Å are what the deployed 17-feature model uses.
-- **Temporal aggregation:** Per-atom mean across snapshots (via `grouped_atoms['q4'].mean()` in `temporal_averaging.py`).
-- **Normalization:** Already dimensionless, passed through.
+#### `R1_SG`, `gaussian_peak2_center`, `gaussian_peak3_center`
+- **What:** First-peak position of the atom's smoothed g_i(r) (`R1_SG`), and the centres of two Gaussians fitted to the second shell.
+- **Algorithm:** `rdf.py` computes a per-atom g_i(r) (KD-tree, minimum image) for each snapshot. `temporal_averaging.py` averages it over the snapshots. With `temporal_first_spatial`, `spatial_analysis_levels.py` then averages each atom's g_i(r) with those of its Voronoi neighbours, and `peak_analysis.py` analyses each atom's averaged curve:
+  - Savitzky–Golay smoothing (window 11, order 5), peak search with `scipy.signal.find_peaks` (parameters in §1.2), R1 = the highest peak below `R1_MAX_SEARCH_R`.
+  - Two-Gaussian fit (`scipy.optimize.curve_fit`) in the range `FIT_R_MIN_FACTOR × R1` to `FIT_R_MAX_FACTOR × R1` (1.5–2.2 × R1), initial guesses at √3 × R1 and √4 × R1.
+- **Note:** with 100 bins up to 12 Å, R1_SG takes few distinct values (10 in the target table, 9 in each reference table).
 
-#### `gaussian_peak2_center` — **per-atom** (with per-structure global R1 normalization)
-- **What:** Center position of the second Gaussian peak fitted to the global RDF.
-- **Algorithm:** `peak_analysis.py` → class `GaussianFitter` fits a 2-Gaussian model to the RDF in the region `R1 × FIT_R_MIN_FACTOR` to `R1 × FIT_R_MAX_FACTOR`. Default: `FIT_R_MIN_FACTOR=1.2`, `FIT_R_MAX_FACTOR=2.2` (roughly 1.2×R1 to 2.2×R1). The fit uses `scipy.optimize.curve_fit`.
-- **Initial guesses:** Peak positions at R1×√3 (~1.732×R1) and R1×√4 (~2.0×R1). These are from FCC/HCP expected ratios for the 2nd and 3rd shells.
-- **Important:** This is computed from the **global** RDF of the whole structure, not per-atom. But it's assigned per-atom and then normalized by per-atom R1_SG. The per-atom R1 normalization makes it effectively per-atom.
-- **Temporal aggregation:** Per-atom mean across snapshots.
-- **Normalization:** Divided by per-atom R1_SG → unit-free ratio (~1.4-1.8).
+#### `excess_energy_temporal`
+- **What:** `pe_atom` minus the mean `pe_atom` of atoms of the same type in the same snapshot (eV).
+- **Temporal aggregation:** per-atom mean.
 
-#### `gaussian_peak3_center` — **per-atom** (same as peak2)
-- Same as above for the third peak. Position at R1×√4 ≈ R1×2.0.
+#### `local_energy_fluctuation_temporal`
+- **What:** Standard deviation of `pe_atom` over the atom's Voronoi neighbours in one snapshot (a spatial fluctuation, eV). Computed in `snapshot_processor.py` together with the other first-shell (MRO depth-1) values.
+- **Temporal aggregation:** per-atom mean.
 
-#### `neighbor_1` — **per-atom**
-- **What:** Number of type-1 (Cu) Voronoi neighbors.
-- **Algorithm:** From `neighbors_by_type` dict computed during Voronoi processing. `neighbor_1 = neighbors_by_type.get(1, 0)`.
-- **Temporal aggregation:** Per-atom mean across snapshots (via `neighbor_records.groupby(level=0).mean()`).
-- **Normalization:** Already dimensionless, passed through.
+#### Stress invariants: `hydrostatic_pressure_temporal`, `von_mises_stress_temporal`, `deviatoric_norm_temporal`, `stress_anisotropy_temporal`
+`compute_stress_invariants()` in `snapshot_processor.py`. Each LAMMPS stress × volume component is divided by the atom's Voronoi volume to give stress in bar (s_ij = stress_ij / V_i). Then:
+- `hydrostatic = (sxx + syy + szz) / 3` (bar; positive = tension, see §1.1)
+- `von_mises = sqrt(0.5·((sxx−syy)² + (syy−szz)² + (szz−sxx)²) + 3·(sxy² + sxz² + syz²))` (bar)
+- `deviatoric_norm = sqrt(dxx² + dyy² + dzz² + 2·(sxy² + sxz² + syz²))` with d_ii = s_ii − hydrostatic (bar)
+- `stress_anisotropy = von_mises / (|hydrostatic| + 1e-10)` (dimensionless)
+- **Temporal aggregation:** per-atom mean.
+- The absolute values depend on dividing by the Voronoi volume. The dashboard and figures divide bar by 10 to show MPa.
 
-#### `neighbor_2` — **per-atom**
-- Same as neighbor_1 but for type-2 (Zr).
+#### `local_enthalpy_temporal`
+- **What:** `pe_atom + hydrostatic × V_voronoi × 6.2415e-7` (eV; 1 bar·Å³ = 6.2415e-7 eV).
+- **Temporal aggregation:** per-atom mean.
 
-#### `excess_energy_temporal` — **per-atom**
-- **What:** Potential energy minus the per-type-per-snapshot mean baseline. `E_excess = E_i - mean(E_atoms_of_same_type_in_this_snapshot)`.
-- **Algorithm:** `snapshot_processor.py`: for each snapshot, compute the mean `pe_atom` for type 1 and type 2 separately, then subtract each atom's type-mean from its pe_atom. This makes it a genuinely local feature (how much higher/lower is this atom's energy than average for its chemical species).
-- **Temporal aggregation:** Per-atom mean across snapshots.
-- **Normalization:** Already local (per-atom, per-type), passed through without re-normalization.
+#### `pe_atom_std_temporal`
+- **What:** Standard deviation of each atom's `pe_atom` over the snapshots (`grouped_atoms['pe_atom'].std()` in `temporal_averaging.py`).
 
-#### `local_energy_fluctuation_temporal` — **per-atom**
-- **What:** Not a separate computation in `snapshot_processor.py`. Source: `local_energy_fluctuation` column in CSV. This is the per-atom standard deviation of energy across the temporal window? The code in `snapshot_processor.py` doesn't compute this directly — it's read from the input data frame at line 173: `local_energy_fluctuation_avg = grouped_atoms['local_energy_fluctuation'].mean().to_dict()`.
-- **Status:** This feature's computation needs verification against the original pipeline code. The CSV already contains it, suggesting it was computed earlier in the pipeline evolution.
-- **Normalization:** Already local, passed through.
+### 2.3 Coordinates in the output table
+The `x`, `y`, `z` columns are not time-averaged. `temporal_averaging.py` keeps the coordinates of the last record of each atom in the list of processed snapshots. That list is filled in the order the parallel workers finish (`as_completed`), so the coordinates come from one snapshot, not necessarily the last one in time. The spatial holdout (§5) and the consensus filter (§8) use these coordinates.
 
-#### `hydrostatic_pressure_temporal` — **per-atom**
-- **What:** Isotropic stress component: `(sxx + syy + szz) / 3` where sxx = stress_xx / Voronoi_volume, etc. Units: bar.
-- **Algorithm:** `snapshot_processor.py` function `compute_stress_invariants()`. Converts from LAMMPS stress×volume to stress (divide by Voronoi volume), then computes hydrostatic as mean of diagonal.
-- **Temporal aggregation:** Per-atom mean across snapshots.
-- **Normalization:** z-scored using pooled reference statistics (not self-referential). Currently uses parameters computed from all reference structures combined.
-
-#### `von_mises_stress_temporal` — **per-atom**
-- **What:** Scalar shear stress invariant. Formula: `sqrt(0.5 * ((sxx-syy)² + (syy-szz)² + (szz-sxx)² + 6*(sxy² + sxz² + syz²)))`. Units: bar.
-- **Algorithm:** Same `compute_stress_invariants()` function.
-- **Normalization:** z-scored using pooled reference statistics.
-
-#### `deviatoric_norm_temporal` — **per-atom**
-- **What:** Norm of the deviatoric stress tensor: `sqrt(sxx² + syy² + szz² + 2*(sxy² + sxz² + syz²))`. Units: bar.
-- **Algorithm:** Same `compute_stress_invariants()` function.
-- **Normalization:** z-scored using pooled reference statistics.
-
-#### `stress_anisotropy_temporal` — **per-atom**
-- **What:** Ratio of von Mises to hydrostatic stress: `von_mises / hydrostatic` (with guard for near-zero hydrostatic). Dimensionless.
-- **Algorithm:** Same `compute_stress_invariants()` function.
-- **Normalization:** z-scored using pooled reference statistics. (Despite being a ratio, the scale varies across systems.)
-
-#### `local_enthalpy_temporal` — **per-atom**
-- **What:** Enthalpy proxy: `E_i + PV_i` where `P = hydrostatic_pressure` and `V = Voronoi_volume`. The stress_x volume terms are converted from bar·Å³ to eV using the conversion factor `1 bar·Å³ = 6.2415e-7 eV`.
-- **Algorithm:** Same `compute_stress_invariants()` function.
-- **Normalization:** z-scored using pooled reference statistics.
-
-#### `pe_atom_std_temporal` — **per-atom**
-- **What:** Standard deviation of each atom's potential energy across the temporal averaging window. Measures energy fluctuation over time.
-- **Algorithm:** `temporal_averaging.py`: `pe_atom_std_over_time = grouped_atoms['pe_atom'].std().to_dict()` — per-atom std across snapshot copies.
-- **Normalization:** z-scored using pooled reference statistics.
-
-#### `pe_volume_residual` — **per-atom**
-- **What:** Residual of a per-atom linear regression of PE vs Voronoi volume: `E_i - (a * V_i + b)` where a,b are fit per snapshot.
-- **Algorithm:** `snapshot_processor.py`: for each snapshot, fit a line to all atoms' `pe_atom` vs `voronoi_volume`, then `residual = pe_atom - (slope * volume + intercept)`.
-- **Temporal aggregation:** Per-atom mean across snapshots.
-- **Normalization:** z-scored using pooled reference statistics.
-
-### 2.3 Features NOT in the whitelist (but computed)
-
-These are computed by the pipeline but excluded from training by the 17-feature whitelist:
-
-- **MRO depth-1:** `mean_neighbor_volume_temporal`, `mean_neighbor_CN_temporal`, `mean_neighbor_pe_temporal`, etc. — averaged over Voronoi neighbors. Excluded because spatial holdout testing showed they leak simulation-box identity.
-- **MRO depth-2/3:** `mean_2nd_neighbor_*`, `mean_3rd_neighbor_*` — same leak issue.
-- **sqrt-ratio features:** `sqrt3_ratio`, `sqrt4_ratio`, etc. — assume specific crystal geometries. Not material-agnostic.
-- **w4, w6:** 3rd-order Steinhardt invariants. Dimensionless but not in the whitelist.
-- **q4_avg, q6_avg:** Lechner-Dellago averaged Steinhardt. Not in the whitelist.
-- **s2_entropy:** Pair entropy. Not in the whitelist.
-- **CSRO features:** `csro_unlike_temporal`, `csro_like_temporal` — confirmed non-leaky in A-vs-B binary test but not in the deployed 18-feature model.
-- **Angle features:** `mean_angle_all_temporal`, etc. — not in whitelist.
+### 2.4 Columns computed but not in the model
+- **MRO depth-1/2/3** (`mean_neighbor_*`, `mean_2nd_neighbor_*`, `mean_3rd_neighbor_*`, `cu_fraction_*`): excluded because they leak simulation-box identity (§9.2).
+- **sqrt-ratio features** (`sqrt3_ratio`, …): assume crystal geometries.
+- **`w4`, `q4_avg`, `q6_avg`, `s2_entropy_*`**, **angle features** (`mean_angle_*`): not in the whitelist.
+- **CSRO** (`csro_unlike_temporal`, `csro_like_temporal`, `csro_unlike_std_temporal`): not validated as leak-free in the current setup; not in the whitelist.
 
 ---
 
 ## 3. TEMPORAL AGGREGATION
 
-File: `Atomic_Simulation_Post-Processing_Pipeline/src/temporal_averaging.py`
-Function: `perform_temporal_averaging()`
+File: `Atomic_Simulation_Post-Processing_Pipeline/src/temporal_averaging.py`, function `perform_temporal_averaging()`.
 
-### Mechanism
-All snapshots' atom data are flattened into a single DataFrame. Then:
-1. **Steinhardt parameters:** Each snapshot's per-atom q4/q6 values are first averaged from per-snapshot arrays to scalars (the Steinhardt function returns an array per atom if `average=False`), then grouped by `id` and mean-averaged across snapshots.
-2. **g_i(r):** Cumulative sum across snapshots (vectorized), then divided by count. Per-atom RDFs are preserved.
-3. **Most other features:** Simple `grouped_atoms[col].mean().to_dict()` per atom across snapshots.
-4. **Special: `pe_atom_std_temporal`** uses `grouped_atoms['pe_atom'].std()` — this is the per-atom std across time, not a mean.
-5. **`csro_unlike_std_temporal`** similarly uses `.std()` rather than `.mean()`.
+All snapshots' atom records are flattened into one DataFrame and grouped by atom `id`:
+1. Most columns: `grouped_atoms[col].mean()`.
+2. g_i(r): summed over snapshots and divided by the count.
+3. `pe_atom_std_temporal` and `csro_unlike_std_temporal`: `.std()` over snapshots.
 
-### What this means
-Every `*_temporal` feature is a per-atom mean (or std for two features) across the temporal window of 11 (reference) or 9 (polyamorphous) snapshots. The snapshots are trajectory frames saved every 1e6 MD steps (dt = 2 fs, so about 2 ns apart) after equilibration.
+Every `*_temporal` feature is therefore a per-atom mean (or standard deviation) over 11 (reference) or 9 (target) snapshots, saved every 1e6 MD steps (dt = 2 fs, about 2 ns apart).
 
 ---
 
 ## 4. NORMALIZATION
 
-File: `Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/build_descriptors.py`
-Function: `build_general_descriptors()`
+File: `Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/build_descriptors.py`, function `build_general_descriptors()`.
 
-### Current normalization rules
-
-| Feature | Rule | Details |
-|---------|------|---------|
-| `R1_SG` | Raw passthrough | Whitelisted as a length-scale reference feature |
-| `voronoi_volume_temporal` | ÷ per-atom R1³ | Each atom's volume ÷ (its own R1_SG)³ |
-| `CN_temporal` | Raw passthrough | Already dimensionless |
-| `q4`, `q6` | Raw passthrough | Already dimensionless |
-| `gaussian_peak2_center` | ÷ per-atom R1 | Each atom's peak position ÷ its own R1_SG |
-| `gaussian_peak3_center` | ÷ per-atom R1 | Same as peak2 |
-| `neighbor_1`, `neighbor_2` | Raw passthrough | Already dimensionless |
-| `excess_energy_temporal` | Raw passthrough | Already local per-atom, per-type |
-| `local_energy_fluctuation_temporal` | Raw passthrough | Already local |
-| `hydrostatic_pressure_temporal` | z-score from norm_params | Fixed mean/std from reference pool |
-| `von_mises_stress_temporal` | z-score from norm_params | Fixed mean/std from reference pool |
-| `deviatoric_norm_temporal` | z-score from norm_params | Fixed mean/std from reference pool |
-| `stress_anisotropy_temporal` | z-score from norm_params | Fixed mean/std from reference pool |
-| `local_enthalpy_temporal` | z-score from norm_params | Fixed mean/std from reference pool |
-| `pe_atom_std_temporal` | z-score from norm_params | Fixed mean/std from reference pool |
-| `pe_volume_residual` | z-score from norm_params | Fixed mean/std from reference pool |
+| Feature | Rule | Model column |
+|---------|------|--------------|
+| `R1_SG` | Raw passthrough (length-scale reference) | `R1_SG` |
+| `voronoi_volume_temporal` | ÷ per-atom R1_SG³ | `voronoi_volume_temporal_norm` |
+| `CN_temporal`, `q4`, `q6`, `neighbor_1`, `neighbor_2` | Raw passthrough (dimensionless) | same name |
+| `gaussian_peak2_center`, `gaussian_peak3_center` | ÷ per-atom R1_SG | `*_norm` |
+| `excess_energy_temporal`, `local_energy_fluctuation_temporal` | Raw passthrough (already local) | same name |
+| `hydrostatic_pressure_temporal`, `von_mises_stress_temporal`, `deviatoric_norm_temporal`, `stress_anisotropy_temporal`, `local_enthalpy_temporal`, `pe_atom_std_temporal` | z-score with pooled reference mean/std | `*_norm` |
 
 ### norm_params source
-Norm_params are computed in `train_and_predict.py` → `load_reference_phases()`:
-1. Load all reference CSVs
-2. Pool the raw values of stress/energy features across all atoms in all reference structures
-3. Compute `mean` and `std` of the pool
-4. Store in a dict
+`load_reference_phases()` in `train_and_predict.py` reads all reference tables, pools the stress/energy columns, and computes mean and std (`norm_params`) and min/max (`feature_ranges`, used only for an out-of-distribution warning). The target is z-scored with the same reference parameters, not with its own statistics.
 
-**Critical:** These are NOT saved to disk by the current train_and_predict pipeline. They're computed at inference time by re-reading the reference CSVs. The ad-hoc export scripts also compute them from scratch.
-
-### Per-atom vs per-structure normalization
-**All normalization is per-atom.** R1_SG varies per atom (13 unique values in polyamorphous target), so the R1-based normalization is genuinely per-atom. z-score normalization uses fixed global parameters but applies to each atom's value individually.
+These values are computed from the reference tables at each run and written to `output_dir` as `norm_params.pkl` and `feature_ranges.pkl` (joblib dicts `{feature: {mean, std}}` and `{feature: {min, max}}`) by `save_run_summaries()`. They record what the run used; inference inside `train_and_predict.py` still recomputes them rather than loading the files.
 
 ---
 
 ## 5. TRAIN/TEST SPLIT
 
-File: `Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/train_and_predict.py`
-Function: `spatial_holdout_split()`
+File: `train_and_predict.py`, function `spatial_holdout_split()`. Parameters in `ref_config.yaml`: `split_axis: x`, `boundary_cutoff: 3.5`.
 
-### Parameters (from ref_config.yaml)
-- `split_axis: "x"` — split on the x-coordinate
-- `boundary_cutoff: 3.5` Å — atoms within this distance of the split plane are excluded from both train and test
+The split is made **inside each reference box**; the target box is not used for validation (it has no labels):
+1. Read the box's feature table (it contains `x`, `y`, `z`; see §2.3).
+2. `median` = median of x.
+3. `boundary = median − 3.5 ≤ x ≤ median + 3.5` (a 7 Å band).
+4. `train = x ≤ median AND NOT boundary`; `test = x > median AND NOT boundary`.
 
-### Algorithm
-1. For each reference structure's CSV: read coordinates from the raw CSV (same file as features CSV)
-2. Compute `axis_median` = median of x-coordinates
-3. `left = x <= median`, `right = x > median`
-4. `boundary = |x - median| < 3.5Å`
-5. `train = left AND NOT boundary`, `test = right AND NOT boundary`
-6. Boundary atoms (~1388 per structure, ~11.9%) are discarded from training and testing
+| Box | Atoms | Train | Test | Boundary (excluded) |
+|---|---|---|---|---|
+| Cu50Zr50 | 11,664 | 5,144 | 5,132 | 1,388 |
+| Cu46Zr54 | 11,664 | 5,132 | 5,137 | 1,395 |
+| Cu64Zr36 | 13,500 | 5,969 | 5,958 | 1,573 |
+| **Total** | 36,828 | 16,245 | **16,227** | 4,356 |
 
-### Atom-ID grouping
-**There is NO atom-ID grouping.** The split is purely spatial along x. An atom that appears left of the median goes to train; one right of the median goes to test. Since the temporal averaging produces ONE row per atom (not per snapshot), there's no issue of the same atom appearing in both train and test — each atom has one row.
-
-However, since the raw CSV contains positions from ONE snapshot (the last one), and the features are temporally averaged across 11 snapshots during which atoms diffuse, a given physical atom's time-averaged position may differ from its position in the one snapshot used for the spatial split. This is an acknowledged limitation.
+No test rows are dropped: the 16,227 test atoms are the row sums of the confusion matrix. Each atom has one row, so no atom is in both train and test. The split is not periodic: atoms at the two ends of the x range are neighbours across the periodic boundary, but they are in different sets.
 
 ---
 
 ## 6. MODEL INPUT
 
 ### 6.1 Classifier input
-- **Shape:** `(N_train, 17)` where N_train ≈ 16,245 (after spatial holdout split from 36,828 reference atoms)
-- **Column order** (17 features; `pe_volume_residual` is not produced and is not in the model):
+- **Shape:** `(16,245, 17)` for training, `(16,227, 17)` for the holdout test.
+- **Column order** (as stored in `model.pkl` → `training_meta['feature_order']`; this is the order of the normalised table, not the whitelist order):
 
 ```
-R1_SG, voronoi_volume_temporal, CN_temporal, q4, q6,
-gaussian_peak2_center, gaussian_peak3_center,
-neighbor_1, neighbor_2,
-excess_energy_temporal, local_energy_fluctuation_temporal,
-hydrostatic_pressure_temporal, von_mises_stress_temporal,
-deviatoric_norm_temporal, stress_anisotropy_temporal,
-local_enthalpy_temporal, pe_atom_std_temporal
+voronoi_volume_temporal_norm, CN_temporal, R1_SG,
+gaussian_peak2_center_norm, gaussian_peak3_center_norm, q4, q6,
+local_energy_fluctuation_temporal, pe_atom_std_temporal_norm,
+hydrostatic_pressure_temporal_norm, von_mises_stress_temporal_norm,
+deviatoric_norm_temporal_norm, stress_anisotropy_temporal_norm,
+local_enthalpy_temporal_norm, excess_energy_temporal,
+neighbor_1, neighbor_2
 ```
 
-- **Labels:** integer 0=Cu50Zr50, 1=Cu46Zr54, 2=Cu64Zr36
+- **Labels:** 0 = Cu50Zr50, 1 = Cu46Zr54, 2 = Cu64Zr36.
 
-### 6.2 Regressor input
-- **Same 17 features** as the classifier, same column order, same spatial splits.
-- **Target:** Continuous Voronoi Cu fraction (0.0-1.0), computed as `(#Cu Voronoi neighbors) / (total Voronoi neighbors)`.
-- **Shape:** Same as classifier: `(N_train, 17)`.
-
-### 6.3 Feature column order is CRITICAL
-Tree-based models (HistGB) index features by **position**, not by name. The `training_meta` dict stores `feature_order` — the exact list of column names in the order they were used during training. Inference MUST produce columns in the exact same order, or predictions will be silently wrong.
+### 6.2 Feature column order is critical
+Tree models index features by position, not by name. `training_meta['feature_order']` stores the exact order; inference must build columns in the same order.
 
 ---
 
 ## 7. MODEL
 
 ### 7.1 Algorithm
-`HistGradientBoostingClassifier` and `HistGradientBoostingRegressor` from scikit-learn.
+`sklearn.ensemble.HistGradientBoostingClassifier` (scikit-learn 1.2.2 in the tested environment). HistGB handles NaN values natively; no rows are dropped.
 
 ### 7.2 Hyperparameters (from ref_config.yaml)
 ```yaml
@@ -298,20 +204,23 @@ learning_rate: 0.05
 max_leaf_nodes: 31
 min_samples_leaf: 20
 ```
+Cross-validation: `StratifiedKFold(n_splits=5, shuffle=True, random_state=42)` on the training split, scoring `f1_macro`. Permutation importance: `permutation_importance(n_repeats=10, random_state=42)` on the holdout test set.
 
-### 7.3 Saved artifacts
+### 7.3 Files written by `train_and_predict.py`
+Path: `output_dir` in the config (`general_phase_id_output/`).
 
-Path: `general_phase_id_output/`
+| File | Contents |
+|------|----------|
+| `model.pkl` | joblib dict with `model` and `training_meta` (model type, 17 features, class names, whitelist, feature order) |
+| `config_used.yaml` | Copy of the config used |
+| `predictions.csv` | Target table plus `predicted_phase_index`, `predicted_phase_name`, `confidence` (not tracked; ~87 MB) |
+| `predicted_phases.xyz` | Extended XYZ for OVITO: species, x, y, z, phase, confidence (not tracked) |
+| `phase_mapping.csv` | phase index → name |
+| `validation_summary.json` | Holdout accuracy, CV macro F1 (mean and std), confusion matrix, per-class precision/recall/F1, per-box split counts, target phase fractions at each threshold, feature order |
+| `permutation_importance.json` | Top-10 permutation importance on the holdout (mean and std; whitelist name and model column) |
+| `norm_params.pkl`, `feature_ranges.pkl` | Pooled reference statistics used in this run (§4) |
 
-| File | Contents | Created by |
-|------|----------|------------|
-| `model.pkl` | Dict with `model` (classifier), `training_meta` | `train_and_predict.py` |
-| `config_used.yaml` | Copy of `ref_config.yaml` at training time | `train_and_predict.py` |
-| `predicted_phases.lammpstrj` | LAMMPS dump with PhaseID, PhaseConfidence, SmoothedPhaseID, LocalCuFraction | Ad-hoc export scripts |
-| `README.txt` | Documentation of A/B gradient caveat | Ad-hoc export scripts |
-| `predictions.csv` | Full per-atom prediction results | `train_and_predict.py` |
-
-**NOT saved** (must be recomputed): `norm_params.pkl`, `feature_ranges.pkl`. These are computed from reference CSV files at each run.
+The last four are written by `save_run_summaries()` (added 2026-11-18). `scripts/generate_real_dashboard_data.py` copies `validation_summary.json` to `docs/assets/` and `results/`, where `scripts/generate_dark_figures.py` reads it.
 
 ### 7.4 training_meta structure
 ```python
@@ -320,75 +229,66 @@ Path: `general_phase_id_output/`
     'n_features': 17,
     'n_classes': 3,
     'class_names': ['Cu50Zr50', 'Cu46Zr54', 'Cu64Zr36'],
-    'mro_depth': 3,
-    'feature_whitelist': [...],  # the 17-feature list
-    'feature_order': [...],  # exact column order used for X
+    'mro_depth': 3,              # default value; MRO columns are not in the model
+    'feature_whitelist': [...],  # the 17 whitelist names
+    'feature_order': [...],      # exact column order (§6.1)
 }
 ```
 
 ---
 
-## 8. INFERENCE ON NEW/TARGET STRUCTURES
+## 8. INFERENCE ON THE TARGET
 
-### 8.1 Steps (from raw dump to final LAMMPS output)
+1. **Post-processing** (`pipeline_orchestrator.py`): all descriptors for the 9 target snapshots, temporal and spatial averaging. About 35 minutes in total with one worker; eight workers ran out of memory on a 7 GB machine.
+2. **Descriptor building** (`build_descriptors.py`): R1 normalisation and z-scoring with the reference `norm_params` (§4).
+3. **Prediction**: `model.predict` and `model.predict_proba`; confidence = maximum probability.
+4. **Spatial consensus** (`apply_spatial_consensus()` in `train_and_predict.py`; `inference.spatial_consensus` in the config: `cutoff 3.6` Å, `weight 0.35`):
+   - Neighbours: all pairs within 3.6 Å (`scipy.spatial.KDTree.query_pairs`), periodic. The box is read from `BOX BOUNDS` of `target_structure.dump_path`, and positions are wrapped into the cell.
+   - `P_smoothed(i) = 0.65 · P(i) + 0.35 · mean_j P(j)`, renormalised; label = argmax, confidence = max of `P_smoothed`.
+   - One pass. Without a dump file the filter runs non-periodic and prints a warning.
+5. **Thresholds** (`inference.multiple_thresholds`: 0.5–0.9): atoms with confidence below the threshold are counted as "uncertain" in the report. Every atom still gets a label in the output files.
+6. **Export**: `predicted_phases.xyz`, `phase_mapping.csv`, `predictions.csv`, then the run summaries (§7.3).
 
-1. **Post-processing pipeline** (`pipeline_orchestrator.py` → `snapshot_processor.py`): Read raw LAMMPS dump(s), compute all per-atom descriptors for the target structure's snapshots. Takes ~30 min per snapshot.
+Target phase fractions (17-feature run, after consensus):
 
-2. **Temporal averaging** (`temporal_averaging.py`): Average per-atom features across the target's snapshots (9 frames).
-
-3. **Descriptor building** (`build_general_descriptors.py`): Apply per-atom R1 normalization and z-score using reference-pooled norm_params.
-
-4. **Classifier prediction** (`model.predict(X_target)`): Get discrete phase labels and confidence (max probability).
-
-5. **Regressor prediction** (ad-hoc): Get continuous LocalCuFraction. Not part of the standard train_and_predict pipeline; run via separate script.
-
-6. **Voronoi spatial smoothing** (ad-hoc, in export scripts):
-   - Compute Voronoi neighbor list from target positions (12-14 avg neighbors)
-   - For each atom, count neighbor phase labels
-   - If ≥ min_agreement (default 0.50) of neighbors share a label, change atom to majority class
-   - Single pass, using ORIGINAL labels for voting (not iteratively updated)
-   - Produces SmoothedPhaseID
-   - Selected by answer-agnostic sweep testing min_agreement in [0.50, 0.55, 0.60, 0.65, 0.70] and picking the value maximizing agreement with region-based ground truth (left=B, middle=A, right=C).
-
-7. **LAMMPS export**: Read the original dump file, append columns:
-   - `PhaseID` (raw classifier prediction)
-   - `PhaseConfidence` (max probability)
-   - `SmoothedPhaseID` (after Voronoi neighbor voting)
-   - `LocalCuFraction` (regressor prediction, 0.0-1.0)
-   Write as one frame with identical header + new columns.
-
-### 8.2 Current parameters (17-feature model)
-- **Smoothing min_agreement:** 0.50
-- **Classifier confidence threshold:** 0.50 (below this = "Uncertain" in reporting, but all atoms get a PhaseID regardless; the LAMMPS output has no special Uncertain marker)
-- **Regressor:** HistGradientBoostingRegressor, same hyperparameters as classifier
+| Threshold | Cu50Zr50 | Cu46Zr54 | Cu64Zr36 | Uncertain |
+|---|---|---|---|---|
+| 0.50 | 22.6 % (8,330) | 25.9 % (9,524) | 35.9 % (13,211) | 15.6 % (5,763) |
+| 0.60 | 4.4 % | 14.0 % | 33.1 % | 48.5 % |
+| 0.70 | 0.2 % | 5.9 % | 29.8 % | 64.1 % |
+| 0.80 | 0.0 % | 1.1 % | 25.9 % | 73.0 % |
+| 0.90 | 0.0 % | 0.0 % | 18.6 % | 81.4 % |
 
 ---
 
 ## 9. KNOWN LIMITATIONS AND CAVEATS
 
-### 9.1 A/B boundary is a continuous gradient
-Confirmed by direct regression in an earlier run (R²=0.938, MAE=0.024 on held-out reference data, R²=0.972 on polyamorphous target). The regression was not re-run on the recomputed features. The Cu fraction changes smoothly from ~0.40 to ~0.45 over ~40Å across the left→middle boundary. Discrete PhaseID labels in this region are inherently ambiguous. **Use LocalCuFraction for visualization in this region.**
+### 9.1 Holdout is one simulation box per phase
+Each reference phase is a single box. The spatial holdout splits atoms inside one box, so it cannot separate phase structure from a box-specific signature. A species-blind SOAP test (`Machine_Learning_Pipeline_for_Materials_Science/experiments/soap_species_blind/RESULT.md`) gave Cu50/Cu46 F1 ≈ 0.64/0.66 but is unresolved for the same reason. The reference boxes also differ in density (Cu50 0.0569, Cu46 0.0556, Cu64 0.0628 atoms/Å³; target 0.0585).
 
-### 9.2 C's residual 3.6% misclassification
-After Voronoi smoothing, ~3.6% of right-region atoms are still labeled as Phase A or B. This is real local compositional heterogeneity, not classifier error: these atoms have mean LocalCuFraction=0.48 vs 0.59 for correctly-labeled Phase C atoms. The model correctly predicts their local environment — it's the local composition that genuinely differs from bulk Cu₆₄Zr₃₆.
+### 9.2 MRO leakage (resolved by exclusion)
+Neighbour-averaged depth-2/3 features gave high CV scores but leaked box identity on the spatial holdout (commit `0ed3604`). They and `cu_fraction_*` are excluded by the whitelist.
 
-### 9.3 q4/q6 at 3.5Å only
-The Steinhardt bond order parameters are computed with `r_max=3.5Å` hardcoded in `snapshot_processor.py`. The 5 Å variants (q4_5a/q6_5a) are present in the CSV but are not in the deployed model; they have not been evaluated on the current 17-feature model.
+### 9.3 Cu50Zr50 vs Cu46Zr54
+The two compositions differ by 4 at.% Cu. Their descriptors overlap strongly (F1 0.50 and 0.59; about 40 % of each class is predicted as the other). On the target, almost no Cu50Zr50 atom reaches confidence 0.70.
 
-### 9.4 Per-atom R1 normalization
-R1_SG has 13 unique values across the 36,828-atom polyamorphous target. The per-atom R1 normalization is implemented correctly in `build_descriptors.py`.
+### 9.4 q4/q6 at 3.5 Å only
+`r_max = 3.5` Å is hard-coded in `snapshot_processor.py`. Other cutoffs were not evaluated for the 17-feature model.
 
-### 9.5 norm_params not saved
-The pipeline does not save norm_params to disk. They are recomputed from reference CSVs at each inference run. This is fragile — if reference CSV files are moved or the whitelist changes, norm_params will silently differ.
+### 9.5 Coarse R1
+With 100 bins up to 12 Å, R1_SG has only 9–10 distinct values per table. Compared with the earlier tables, R1_SG and the Gaussian centres differ for about 4–9 % of atoms (correlation about 0.85–0.96); the cause is not established.
 
-### 9.6 Config file (resolved)
-`ref_config.yaml` now lists exactly the 17 features of the deployed model. CSRO and other extras are not in the whitelist.
+### 9.6 norm_params recomputed at each run
+`norm_params` are recomputed from the reference tables at each run (and saved, §4). If the tables move or change, the normalisation changes; compare the saved `norm_params.pkl` between runs to detect this.
 
-### 9.7 process_trajectory.py has stale whitelist
-The `WHITELIST` in `process_trajectory.py` still includes CSRO features that the deployed 17-feature model does not use. This file needs updating for consistency.
+### 9.7 Coordinates from one snapshot
+The split and the consensus filter use coordinates from one snapshot, chosen by worker completion order (§2.3), while the features are averaged over all snapshots.
 
-### 9.8 Spatial analysis module (resolved)
-`spatial_analysis_levels.py` was removed in commit eb06523 and is restored in `src/` unchanged (identical to `eb06523^`). The `temporal_first_spatial` step needs it; `temporal_only` runs without it, but then the spatial R1/Gaussian features are not produced.
+### 9.8 Regression not re-run
+An earlier version trained a `HistGradientBoostingRegressor` for the local Cu fraction and a Voronoi majority-vote smoothing (`SmoothedPhaseID`, `LocalCuFraction` in the old `predicted_phases.lammpstrj`). Neither is part of the current code path (those export files were removed on 2026-11-18), and their earlier results (R² = 0.938 / 0.972) are not reproduced and must not be quoted.
 
-### 9.9 Holdout is one simulation box per phase
-Each reference phase is a single box. The spatial holdout splits atoms inside one box, so it cannot separate phase structure from a box-specific signature. The MRO leak (§8.2 of PROJECT_BRIEF) was one example. A species-blind SOAP test (`experiments/soap_species_blind/RESULT.md`) gave Cu50/Cu46 F1 ≈ 0.64/0.66 but this is unresolved for the same reason.
+### 9.9 Legacy code
+`Machine_Learning_Pipeline_for_Materials_Science/src/process_trajectory.py` and the ML folder's `config.yaml` belong to the earlier pipeline. The `WHITELIST` in `process_trajectory.py` still includes CSRO features. The current path is `train_and_predict.py` + `ref_config.yaml`.
+
+### 9.10 Spatial analysis module
+`spatial_analysis_levels.py` was removed in commit `eb06523` and restored unchanged from `eb06523^`. `temporal_first_spatial` needs it; `temporal_only` runs without it but does not produce the spatially averaged R1/Gaussian features.

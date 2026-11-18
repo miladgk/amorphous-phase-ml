@@ -6,7 +6,7 @@ Status: exploratory. Not part of the production 17-feature model.
 - DScribe SOAP, species-blind (one species channel), periodic cell from the dump bounds,
   r_cut = 5.0 Å, n_max = 8, l_max = 6, sigma = 0.4 Å → 252 components per atom.
 - Averaged over snapshots per atom id: 11 frames for references, 9 for the target.
-- Model: HistGB, same spatial holdout as production (|x − median| < 3.5 Å removed).
+- Model: HistGB, same spatial holdout as production (inside each reference box: train x < median − 3.5 Å, test x > median + 3.5 Å).
 - Timing between snapshots: timestep index step 1e6 with dt = 2 fs, so frames are ~2 ns apart.
   This is far above the picosecond vibrational regime, so dynamic descriptors were not used.
 
@@ -25,7 +25,7 @@ Status: exploratory. Not part of the production 17-feature model.
 3. Confound not excluded: each reference phase is one simulation box. Box densities differ:
    Cu50 0.0569, Cu46 0.0556, Cu64 0.0628 atoms/Å³ (target 0.0585). A holdout that splits atoms
    within one box cannot tell phase structure from a box-specific signature. The same failure
-   previously caused the MRO leak documented in PROJECT_BRIEF §8.2.
+   previously caused the MRO leak documented in PIPELINE.md §9.2.
 4. Target sanity check (no ground truth for Cu50/Cu46): in x ≥ 130 Å the SOAP model assigns
    97.9 % Cu64 vs 92.6 % for the production model. Consistent with a real Cu64 signal, but not
    evidence for the Cu50/Cu46 split.

@@ -11,7 +11,7 @@ Combines Parts 1-5:
 Usage:
     python3 general_phase_id/train_and_predict.py --config general_phase_id/ref_config.yaml
 """
-import sys, os, yaml, glob, joblib
+import sys, os, json, yaml, glob, joblib
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -167,7 +167,8 @@ def spatial_holdout_split(
     all_test_y = []
     
     total_boundary = 0
-    
+    per_phase_counts = {}
+
     if verbose:
         print(f'\nSpatial holdout split (axis={split_axis}, cutoff={boundary_cutoff}A):')
     
@@ -213,7 +214,13 @@ def spatial_holdout_split(
         
         n_boundary = boundary.sum()
         total_boundary += n_boundary
-        
+        per_phase_counts[name] = {
+            'atoms': int(n_atoms),
+            'train': int(clean_left.sum()),
+            'test': int(clean_right.sum()),
+            'boundary_excluded': int(n_boundary),
+        }
+
         if verbose:
             print(f'  {name}: train={clean_left.sum()}, test={clean_right.sum()}, boundary={n_boundary}')
     
@@ -230,6 +237,7 @@ def spatial_holdout_split(
         'X_test': X_test, 'y_test': y_test,
         'feature_cols': feature_cols,
         'total_boundary': total_boundary,
+        'per_phase_counts': per_phase_counts,
     }
 
 
@@ -278,17 +286,18 @@ def train_model(
     # Test on spatial holdout
     y_pred = model.predict(X_test)
     test_acc = accuracy_score(y_test, y_pred)
-    
+    report = classification_report(y_test, y_pred, labels=list(range(n_classes)),
+                                    target_names=phase_names, output_dict=True,
+                                    zero_division=0)
+    cm = confusion_matrix(y_test, y_pred, labels=list(range(n_classes)))
+
     if verbose:
         print(f'Test accuracy (spatial holdout): {test_acc:.4f}')
         print(f'\nPer-class F1:')
-        report = classification_report(y_test, y_pred, target_names=phase_names,
-                                        output_dict=True)
         for name in phase_names:
             print(f'  {name}: {report[name]["f1-score"]:.4f}')
-        
+
         print(f'\nConfusion matrix:')
-        cm = confusion_matrix(y_test, y_pred)
         cm_df = pd.DataFrame(cm, index=[f'True {n}' for n in phase_names],
                              columns=[f'Pred {n}' for n in phase_names])
         print(cm_df)
@@ -321,6 +330,8 @@ def train_model(
         'cv_scores': cv_scores,
         'y_pred': y_pred,
         'y_test': y_test,
+        'report': report,
+        'confusion_matrix': cm,
         'permutation_importance': r,
         'sorted_idx': sorted_idx,
     }
@@ -640,6 +651,145 @@ def export_ovito(
 
 
 # =============================================================================
+# Part 6: Run summaries (written by the code, not by hand)
+# =============================================================================
+
+def _base_feature_name(col: str) -> str:
+    """Model column -> whitelist name (strip one trailing '_norm' added by build_descriptors)."""
+    return col[:-len('_norm')] if col.endswith('_norm') else col
+
+
+def save_run_summaries(
+    result: dict,
+    split: dict,
+    pred_result: dict,
+    phase_names: list,
+    norm_params: dict,
+    feature_ranges: dict,
+    config: dict,
+    output_dir: str,
+    verbose: bool = True
+) -> dict:
+    """
+    Write the run's metrics and normalisation parameters to output_dir:
+      - validation_summary.json      holdout metrics, confusion matrix, split counts,
+                                     target phase fractions (read by scripts/)
+      - permutation_importance.json  top-10 permutation importance on the holdout
+      - norm_params.pkl, feature_ranges.pkl  pooled reference statistics used for
+                                     z-scoring and the OOD check in this run
+    """
+    feature_cols = split['feature_cols']
+    report = result['report']
+    cm = result['confusion_matrix']
+    cv = np.asarray(result['cv_scores'], dtype=float)
+    boundary_cutoff = config['validation'].get('boundary_cutoff', 3.5)
+    split_axis = config['validation'].get('split_axis', 'x')
+    n_test = int(len(split['y_test']))
+    n_train = int(len(split['y_train']))
+    n_correct = int(np.trace(cm))
+
+    # Target box geometry from the dump (if available)
+    box_lo, box_size = read_dump_box(config['target_structure'].get('dump_path'))
+    n_target = int(len(pred_result['preds']))
+
+    letters = [chr(ord('A') + i) for i in range(len(phase_names))]
+    summary = {
+        'model_metadata': {
+            'classifier': result['model'].__class__.__name__,
+            'n_features': int(result['model'].n_features_in_),
+            'feature_whitelist': [_base_feature_name(c) for c in feature_cols],
+            'feature_order': list(feature_cols),
+            'domain_dimensions_angstrom': (
+                [round(float(v), 2) for v in box_size] if box_size is not None else None),
+            'total_domain_atoms': n_target,
+            'spatial_holdout_train_atoms': n_train,
+            'spatial_holdout_test_atoms': n_test,
+            'exclusion_zone_angstrom': boundary_cutoff,
+            'note': (
+                f'Spatial holdout inside each reference box (train {split_axis} < median - '
+                f'{boundary_cutoff} A, test {split_axis} > median + {boundary_cutoff} A): '
+                f'{n_train:,} train and {n_test:,} test atoms; no rows dropped '
+                f'(accuracy {result["test_accuracy"]:.4f} = {n_correct:,}/{n_test:,}). '
+                'total_domain_atoms and domain_dimensions_angstrom refer to the target box.'
+            ),
+        },
+        'spatial_holdout_accuracy': {
+            'mean': round(float(result['test_accuracy']), 4),
+            'cv_macro_avg_f1': round(float(np.nanmean(cv)), 4),
+            'cv_macro_avg_f1_std': round(float(np.nanstd(cv)), 4),
+        },
+        'holdout_split': split.get('per_phase_counts', {}),
+        'confusion_matrix': cm.astype(int).tolist(),
+        'per_class_metrics': {
+            f'Phase_{i}_{name}': {
+                'precision': round(float(report[name]['precision']), 4),
+                'recall': round(float(report[name]['recall']), 4),
+                'f1_score': round(float(report[name]['f1-score']), 4),
+            }
+            for i, name in enumerate(phase_names)
+        },
+        'per_class_f1': {
+            f'Phase_{letters[i]}': round(float(report[name]['f1-score']), 4)
+            for i, name in enumerate(phase_names)
+        },
+        'target_phase_fractions': [
+            {
+                'threshold': float(th),
+                **{f'{phase_names[ci]}_count': int(row[f'class_{ci}_count'])
+                   for ci in range(len(phase_names))},
+                **{f'{phase_names[ci]}_pct': round(float(row[f'class_{ci}_fraction']), 1)
+                   for ci in range(len(phase_names))},
+                'uncertain_count': int(row['uncertain_count']),
+                'uncertain_pct': round(float(row['uncertain_fraction']), 1),
+            }
+            for th, row in sorted(pred_result['results_by_threshold'].items())
+        ],
+        'source': 'written by train_and_predict.py (save_run_summaries)',
+    }
+    summary_path = os.path.join(output_dir, 'validation_summary.json')
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, indent=2)
+
+    paths = {'validation_summary': summary_path}
+
+    r = result.get('permutation_importance')
+    if r is not None:
+        order = np.argsort(r.importances_mean)[::-1][:10]
+        perm = {
+            'source': ('train_and_predict.py, permutation_importance(n_repeats=10, '
+                       'random_state=42) on the spatial holdout test set'),
+            'items': [
+                {
+                    'rank': rank,
+                    'column_index': int(i),
+                    'feature': _base_feature_name(feature_cols[i]),
+                    'column': feature_cols[i],
+                    'importance': round(float(r.importances_mean[i]), 4),
+                    'std': round(float(r.importances_std[i]), 4),
+                }
+                for rank, i in enumerate(order, 1)
+            ],
+        }
+        perm_path = os.path.join(output_dir, 'permutation_importance.json')
+        with open(perm_path, 'w', encoding='utf-8') as f:
+            json.dump(perm, f, indent=2)
+        paths['permutation_importance'] = perm_path
+
+    np_path = os.path.join(output_dir, 'norm_params.pkl')
+    fr_path = os.path.join(output_dir, 'feature_ranges.pkl')
+    joblib.dump(norm_params, np_path)
+    joblib.dump(feature_ranges, fr_path)
+    paths['norm_params'] = np_path
+    paths['feature_ranges'] = fr_path
+
+    if verbose:
+        print('\nRun summaries written:')
+        for p in paths.values():
+            print(f'  {p}')
+    return paths
+
+
+# =============================================================================
 # Main pipeline
 # =============================================================================
 
@@ -789,7 +939,12 @@ def run(config_path: str, verbose: bool = True):
     out_df.to_csv(results_csv, index=False)
     if verbose:
         print(f'\nFull predictions saved to {results_csv}')
-    
+
+    save_run_summaries(
+        result, split, pred_result, phase_names,
+        norm_params, feature_ranges, config, output_dir, verbose=verbose
+    )
+
     # =====================================================================
     # Summary
     # =====================================================================

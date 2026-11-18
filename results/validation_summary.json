@@ -21,19 +21,60 @@
       "neighbor_1",
       "neighbor_2"
     ],
+    "feature_order": [
+      "voronoi_volume_temporal_norm",
+      "CN_temporal",
+      "R1_SG",
+      "gaussian_peak2_center_norm",
+      "gaussian_peak3_center_norm",
+      "q4",
+      "q6",
+      "local_energy_fluctuation_temporal",
+      "pe_atom_std_temporal_norm",
+      "hydrostatic_pressure_temporal_norm",
+      "von_mises_stress_temporal_norm",
+      "deviatoric_norm_temporal_norm",
+      "stress_anisotropy_temporal_norm",
+      "local_enthalpy_temporal_norm",
+      "excess_energy_temporal",
+      "neighbor_1",
+      "neighbor_2"
+    ],
     "domain_dimensions_angstrom": [
       181.16,
       58.96,
       58.96
     ],
     "total_domain_atoms": 36828,
+    "spatial_holdout_train_atoms": 16245,
     "spatial_holdout_test_atoms": 16227,
     "exclusion_zone_angstrom": 3.5,
-    "note": "pe_volume_residual is in the config but the current pipeline does not produce it; the model uses 17 features. Test set has 16,227 atoms: 6 Cu64Zr36 test rows with NaN features are dropped (accuracy 0.6781 = 11,003/16,227)."
+    "note": "Spatial holdout inside each reference box (train x < median - 3.5 A, test x > median + 3.5 A): 16,245 train and 16,227 test atoms; no rows dropped (accuracy 0.6781 = 11,003/16,227). total_domain_atoms and domain_dimensions_angstrom refer to the target box."
   },
   "spatial_holdout_accuracy": {
     "mean": 0.6781,
-    "cv_macro_avg_f1": 0.6697
+    "cv_macro_avg_f1": 0.6697,
+    "cv_macro_avg_f1_std": 0.0054
+  },
+  "holdout_split": {
+    "Cu50Zr50": {
+      "atoms": 11664,
+      "train": 5144,
+      "test": 5132,
+      "boundary_excluded": 1388
+    },
+    "Cu46Zr54": {
+      "atoms": 11664,
+      "train": 5132,
+      "test": 5137,
+      "boundary_excluded": 1395
+    },
+    "Cu64Zr36": {
+      "atoms": 13500,
+      "train": 5969,
+      "test": 5958,
+      "boundary_excluded": 1573
+    }
   },
   "confusion_matrix": [
     [
@@ -74,5 +115,62 @@
     "Phase_B": 0.5897,
     "Phase_C": 0.8997
   },
-  "source": "train_and_predict.py run on recomputed features (temporal_first_spatial, 9-frame target, 11-frame references)"
+  "target_phase_fractions": [
+    {
+      "threshold": 0.5,
+      "Cu50Zr50_count": 8330,
+      "Cu46Zr54_count": 9524,
+      "Cu64Zr36_count": 13211,
+      "Cu50Zr50_pct": 22.6,
+      "Cu46Zr54_pct": 25.9,
+      "Cu64Zr36_pct": 35.9,
+      "uncertain_count": 5763,
+      "uncertain_pct": 15.6
+    },
+    {
+      "threshold": 0.6,
+      "Cu50Zr50_count": 1623,
+      "Cu46Zr54_count": 5172,
+      "Cu64Zr36_count": 12174,
+      "Cu50Zr50_pct": 4.4,
+      "Cu46Zr54_pct": 14.0,
+      "Cu64Zr36_pct": 33.1,
+      "uncertain_count": 17859,
+      "uncertain_pct": 48.5
+    },
+    {
+      "threshold": 0.7,
+      "Cu50Zr50_count": 83,
+      "Cu46Zr54_count": 2167,
+      "Cu64Zr36_count": 10967,
+      "Cu50Zr50_pct": 0.2,
+      "Cu46Zr54_pct": 5.9,
+      "Cu64Zr36_pct": 29.8,
+      "uncertain_count": 23611,
+      "uncertain_pct": 64.1
+    },
+    {
+      "threshold": 0.8,
+      "Cu50Zr50_count": 0,
+      "Cu46Zr54_count": 398,
+      "Cu64Zr36_count": 9556,
+      "Cu50Zr50_pct": 0.0,
+      "Cu46Zr54_pct": 1.1,
+      "Cu64Zr36_pct": 25.9,
+      "uncertain_count": 26874,
+      "uncertain_pct": 73.0
+    },
+    {
+      "threshold": 0.9,
+      "Cu50Zr50_count": 0,
+      "Cu46Zr54_count": 8,
+      "Cu64Zr36_count": 6851,
+      "Cu50Zr50_pct": 0.0,
+      "Cu46Zr54_pct": 0.0,
+      "Cu64Zr36_pct": 18.6,
+      "uncertain_count": 29969,
+      "uncertain_pct": 81.4
+    }
+  ],
+  "source": "written by train_and_predict.py (save_run_summaries)"
 }

@@ -7,7 +7,7 @@ polyamorphous target box.
 
 ## Current result (17 features)
 
-Spatial holdout (atoms with |x − median| < 3.5 Å removed from the target box; 16,227 test atoms):
+Spatial holdout inside each reference box (train: x below the box's median x; test: x above it; a 3.5 Å band on each side of the median excluded). 16,245 train and 16,227 test atoms. The target box has no labels and is not used for validation.
 
 | Metric | Value |
 |---|---|
@@ -35,8 +35,15 @@ python Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/trai
     --config Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/ref_config.yaml
 ```
 
-Outputs go to `output_dir` in the config (`general_phase_id_output/`): `model.pkl`, `predictions.csv`,
-`predicted_phases.lammpstrj`, `predicted_phases.xyz`, `config_used.yaml` and plots.
+On a small machine, limit OpenMP threads (e.g. `OMP_NUM_THREADS=2 python ...`). With that limit a full run takes
+about 5 minutes on an 8-core / 7 GB machine; without it the run oversubscribed the CPU and stalled.
+
+Outputs go to `output_dir` in the config (`general_phase_id_output/`): `model.pkl`, `config_used.yaml`,
+`predictions.csv`, `predicted_phases.xyz`, `phase_mapping.csv`, and the run summaries `validation_summary.json`
+(holdout metrics, confusion matrix, split counts, target phase fractions), `permutation_importance.json`,
+`norm_params.pkl` and `feature_ranges.pkl`. Figures and dashboard data come from
+`scripts/generate_real_dashboard_data.py` (which also copies `validation_summary.json` to `docs/assets/` and
+`results/`) and `scripts/generate_dark_figures.py` at the repository root.
 
 Tests (also run by CI):
 
@@ -57,12 +64,12 @@ Configured in `src/general_phase_id/ref_config.yaml` (`feature_whitelist`):
 `pe_volume_residual` appeared in earlier lists, but the current pipeline does not produce it, so the model has 17 features, not 18.
 
 Excluded on purpose:
-- MRO depth-2/3 features (`mean_*_neighbor_*`, `cu_fraction_*`): they leak simulation-box identity (`PIPELINE.md` §8.2).
+- MRO depth-2/3 features (`mean_*_neighbor_*`, `cu_fraction_*`): they leak simulation-box identity (`PIPELINE.md` §9.2).
 - Chemical SRO and neighbour ratios: not validated as non-leaky in the current setup.
 
 ## Known limitations
 
-- Each reference phase is one simulation box. The spatial holdout cannot separate phase structure from box-specific signatures (`PIPELINE.md` §9.9).
+- Each reference phase is one simulation box. The spatial holdout cannot separate phase structure from box-specific signatures (`PIPELINE.md` §9.1).
 - Cu50Zr50 and Cu46Zr54 differ by 4 at.% Cu, and their descriptors overlap strongly, so their F1 values are low.
 - Species-blind SOAP was tested as an experiment and is not in the model (`experiments/soap_species_blind/RESULT.md`).
 
@@ -73,6 +80,6 @@ Excluded on purpose:
 - `src/general_phase_id/ref_config.yaml`: feature whitelist, model parameters and paths.
 - `src/process_trajectory.py`: older trajectory-processing helper. It is not used by the current pipeline, and its whitelist still lists CSRO features. Treat it as legacy.
 - `config.yaml` (this folder): legacy configuration from the earlier 2-class/3-class runs; it refers to CSV files that are not in the repository. The current configuration is `src/general_phase_id/ref_config.yaml`.
-- `scripts/generate_rigor_artifacts.py`: helper for the rigor artifacts.
-- `tests/`: unit tests (4 passing).
+- `src/general_phase_id/run_validation.py`, `clustering.py`: older validation and unsupervised-clustering helpers; not used by `train_and_predict.py`.
+- `tests/`: unit tests (4 passing). They are mostly placeholders: they do not run `train_and_predict.py`, `build_descriptors.py` or the feature extraction on real data.
 - `experiments/`: exploratory results that did not enter the model.

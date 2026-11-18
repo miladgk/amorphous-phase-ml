@@ -207,6 +207,18 @@ def main():
             json.dump(dashboard_bundle, f, separators=(',', ':'))
         print(f"Saved: {d_path} ({os.path.getsize(d_path)/1024:.1f} KB)")
 
+    # validation_summary.json is written by train_and_predict.py; publish copies
+    # for the dashboard figures (docs/assets) and for results/.
+    import shutil
+    summary_src = 'general_phase_id_output/validation_summary.json'
+    if os.path.exists(summary_src):
+        for d in ['docs/assets', 'results']:
+            os.makedirs(d, exist_ok=True)
+            shutil.copy2(summary_src, os.path.join(d, 'validation_summary.json'))
+            print(f"Copied: {summary_src} -> {d}/validation_summary.json")
+    else:
+        print(f"WARNING: {summary_src} not found; run train_and_predict.py first.")
+
     print("\nAll authentic dashboard data successfully generated!")
 
 if __name__ == '__main__':

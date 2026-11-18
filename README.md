@@ -47,7 +47,7 @@ flowchart LR
 
 ## Key Results
 
-Spatial holdout: atoms with |x − median| < 3.5 Å removed from the target box; 16,227 test atoms.
+Spatial holdout inside each reference box: atoms with x below the box's median x are used for training and atoms above it for testing, with a 3.5 Å band on each side of the median excluded (16,245 train / 16,227 test atoms). The target box has no labels and is not used for validation.
 
 | Metric | Value |
 |--------|-------|
@@ -58,7 +58,7 @@ Spatial holdout: atoms with |x − median| < 3.5 Å removed from the target box;
 | Target box | 36,828 atoms, features averaged over 9 snapshots (dt = 2 fs, about 2 ns apart) |
 | Reference boxes | 11 snapshots each, one simulation box per phase |
 
-Limitation: each reference phase is a single simulation box, so the holdout does not test transfer to independent simulations (see PIPELINE.md §9.9).
+Limitation: each reference phase is a single simulation box, so the holdout does not test transfer to independent simulations (see PIPELINE.md §9.1).
 
 ---
 
@@ -75,7 +75,7 @@ Limitation: each reference phase is a single simulation box, so the holdout does
 
 ### 3. Measures in the pipeline
 - **Spatial consensus smoothing:** periodic neighbour averaging of class probabilities (`apply_spatial_consensus` in `train_and_predict.py`; cutoff 3.6 Å, weight 0.35; periodic box read from the LAMMPS dump).
-- **Confidence cutoffs:** the dashboard reports the fraction of atoms at confidence ≥ 0.50, 0.60, 0.70, 0.80 and 0.90. At 0.50, 15.6 % of atoms remain uncertain.
+- **Confidence cutoffs:** the dashboard reports the fraction of atoms at confidence ≥ 0.50, 0.60, 0.70, 0.80 and 0.90. At 0.50, 15.6 % of atoms remain uncertain; at 0.70, 64.1 % do, and almost no atom is labelled Cu₅₀Zr₅₀ (0.2 %).
 
 ---
 
@@ -91,6 +91,11 @@ amorphous-phase-ml/
 ├── environment.yml                                    # Conda environment
 ├── requirements.txt                                   # pip dependencies
 ├── .github/workflows/ci.yml                           # CI: runs the ML unit tests
+├── index.html, assets/                                # Copy of the dashboard (identical to docs/)
+├── results/validation_summary.json                    # Copy of the run's validation_summary.json
+├── scripts/                                           # Dashboard data and figure generators
+│   ├── generate_real_dashboard_data.py                # predictions.csv → dashboard JSON; copies validation_summary.json
+│   └── generate_dark_figures.py                       # dashboard JSON + predictions → PNG figures
 │
 ├── docs/                                              # GitHub Pages site (dashboard + figures)
 │   ├── index.html                                     # Interactive dashboard
@@ -110,16 +115,16 @@ amorphous-phase-ml/
 │   ├── src/process_trajectory.py                      # Older trajectory helper (legacy, see its README note)
 │   ├── data/polyamorphous/                            # Target LAMMPS dumps (9 snapshots)
 │   ├── tests/                                         # Unit tests (pytest)
-│   ├── experiments/soap_species_blind/                # Exploratory SOAP result (not adopted)
-│   └── scripts/generate_rigor_artifacts.py
+│   └── experiments/soap_species_blind/                # Exploratory SOAP result (not adopted)
 │
 └── general_phase_id_output/                           # Trained model and predictions
     ├── model.pkl                                      # Classifier (17 features)
     ├── config_used.yaml                               # Configuration of the run
-    ├── norm_params.pkl, feature_ranges.pkl
-    ├── permutation_importance.json
-    ├── predictions.csv                                # Per-atom predictions (not tracked; large)
-    ├── predicted_phases.xyz / .lammpstrj              # Visualisation outputs
+    ├── validation_summary.json                        # Holdout metrics, confusion matrix, split counts
+    ├── permutation_importance.json                    # Permutation importance on the holdout
+    ├── norm_params.pkl, feature_ranges.pkl            # Reference statistics used in the run
+    ├── phase_mapping.csv                              # Phase index → name
+    ├── predictions.csv, predicted_phases.xyz          # Per-atom predictions (not tracked; large)
     └── plots/                                         # Figures
 ```
 
@@ -157,7 +162,8 @@ python Atomic_Simulation_Post-Processing_Pipeline/src/pipeline_orchestrator.py \
 python Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/train_and_predict.py \
     --config Machine_Learning_Pipeline_for_Materials_Science/src/general_phase_id/ref_config.yaml
 
-# 3. Figures and dashboard data
+# 3. Dashboard data, then figures (both read predictions.csv)
+python scripts/generate_real_dashboard_data.py
 python scripts/generate_dark_figures.py
 
 # 4. Tests
